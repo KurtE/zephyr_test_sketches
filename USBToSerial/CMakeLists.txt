@@ -5,5 +5,5 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(cdc_acm)
 
 include(${ZEPHYR_BASE}/samples/subsys/usb/common/common.cmake)
-FILE(GLOB app_sources src/*.c)
+FILE(GLOB app_sources src/*.cpp)
 target_sources(app PRIVATE ${app_sources})

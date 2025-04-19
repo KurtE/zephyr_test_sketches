@@ -28,18 +28,31 @@
 
 LOG_MODULE_REGISTER(cdc_acm_echo, LOG_LEVEL_INF);
 
+#include "UARTDevice.h"
+
 
 static const struct gpio_dt_spec connector_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), digital_pin_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
+
+UARTDevice SerialX(serial_dev);
+UARTDevice USBSerial(usb_uart_dev);
+
+#if 0
 #define RING_BUF_SIZE 1024
 uint8_t ring_buffer[RING_BUF_SIZE];
 
 struct ring_buf ringbuf;
 
 static bool rx_throttled;
+#endif
+
+
+inline int min(int a, int b) {
+	return (a <= b)? a : b;
+}
 
 // lets add LED
 /* The devicetree node identifier for the "led0" alias. */
@@ -119,6 +132,7 @@ static int enable_usb_device_next(void)
 }
 #endif /* defined(CONFIG_USB_DEVICE_STACK_NEXT) */
 
+#if 0
 static void interrupt_handler(const struct device *dev, void *user_data)
 {
 	ARG_UNUSED(user_data);
@@ -180,10 +194,17 @@ static void interrupt_handler(const struct device *dev, void *user_data)
 	}
 }
 
+void usb_print_string(const char *msg) {
+	uart_fifo_fill(usb_uart_dev, (const uint8_t *)msg, strlen(msg));
+}
+
+#endif
+
 int main(void)
 {
 	int ret;
 
+#if 0
 	if (!device_is_ready(usb_uart_dev)) {
 		LOG_ERR("CDC ACM device not ready");
 		return 0;
@@ -194,6 +215,7 @@ int main(void)
 		return 0;
 	}
 	
+#endif
 
 	if (!gpio_is_ready_dt(&led)) {
 		LOG_ERR("LED device not ready");
@@ -206,12 +228,8 @@ int main(void)
 		return 0;
 	}
 
-	printk("Print connector pins\n");
-  for (size_t i = 0; i < ARRAY_SIZE(connector_pins); i++) {
-  	printk("%u %p %u\n", i, connector_pins[i].port, connector_pins[i].pin);
-  }
-
-
+//===============================================================	
+// BUGBUG:: need to wrap this in class...
 #if defined(CONFIG_USB_DEVICE_STACK_NEXT)
 		ret = enable_usb_device_next();
 #else
@@ -223,7 +241,7 @@ int main(void)
 		return 0;
 	}
 
-	ring_buf_init(&ringbuf, sizeof(ring_buffer), ring_buffer);
+//	ring_buf_init(&ringbuf, sizeof(ring_buffer), ring_buffer);
 
 	LOG_INF("Wait for DTR");
 
@@ -262,10 +280,47 @@ int main(void)
 #ifndef CONFIG_USB_DEVICE_STACK_NEXT
 	print_baudrate(usb_uart_dev);
 #endif
-	uart_irq_callback_set(usb_uart_dev, interrupt_handler);
-
+//	uart_irq_callback_set(usb_uart_dev, interrupt_handler);
 	/* Enable rx interrupts */
-	uart_irq_rx_enable(usb_uart_dev);
+//	uart_irq_rx_enable(usb_uart_dev);
+
+	USBSerial.begin();
+	SerialX.begin();
+
+	USBSerial.print("Print connector pins\n");
+  	for (size_t i = 0; i < ARRAY_SIZE(connector_pins); i++) {
+  		USBSerial.printf("%u %p %u\n", i, connector_pins[i].port, connector_pins[i].pin);
+  	}
+
+  	// Main loop, would be nice if we setup events for the two RX queues, but startof KISS
+  	for (;;) {
+  		uint8_t buffer[80];
+  		int avail_read, avail_write, cb, cb_read;
+
+  		avail_read = USBSerial.available();
+  		if (avail_read) {
+  			avail_write = SerialX.availableForWrite();
+  			cb = min((int)sizeof(buffer), min(avail_read, avail_write));
+  			if (cb) {
+  				cb_read = USBSerial.read(buffer, cb);
+  				SerialX.write(buffer, cb_read);
+  			}
+  		}
+
+  		avail_read = SerialX.available();
+  		if (avail_read) {
+  			avail_write = USBSerial.availableForWrite();
+  			cb = min((int)sizeof(buffer), min(avail_read, avail_write));
+  			if (cb) {
+  				cb_read = SerialX.read(buffer, cb);
+  				USBSerial.write(buffer, cb_read);
+  			}
+  		}
+
+
+
+  	}
+
 
 	return 0;
 }
