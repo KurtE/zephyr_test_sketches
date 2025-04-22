@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) 2021 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+/ {
+	aliases {
+	};
+	zephyr,user {
+//		digital-pin-gpios = <&micromod_header 0 0>,
+//						<&micromod_header 1 0>,
+//						<&micromod_header 2 0>,
+//						<&micromod_header 3 0>,
+//						<&micromod_header 4 0>,
+//						<&micromod_header 5 0>,
+//						<&micromod_header 6 0>,
+//						<&micromod_header 7 0>,
+//						<&micromod_header 8 0>,
+//						<&micromod_header 9 0>,
+//						<&micromod_header 10 0>,
+//						<&micromod_header 11 0>,
+//						<&micromod_header 12 0>,
+//						<&micromod_header 13 0>,
+//						<&micromod_header 14 0>,
+//						<&micromod_header 15 0>,
+//						<&micromod_header 16 0>,
+//						<&micromod_header 17 0>;
+//
+		ili9341-gpios = <&gpio2 12 GPIO_ACTIVE_HIGH>,	/* CS PIN 32 mmod */
+						<&gpio2 11 GPIO_ACTIVE_HIGH>,	/* DC PIN 9 mmod */
+						<&gpio3 22 GPIO_ACTIVE_HIGH>;	/* RST Pin 31 */
+
+	};
+	
+	chosen {
+		//uart,passthrough = &lpuart4; // Teensy pins 7(RX) 8(TX)
+		spi,ili9341 = &lpspi4;
+
+	};
+};
+
+&lpuart4 {
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&pinctrl {
+
+	/* LPSPI4 MISO, MOSI, SCK, CS on Teensy-Pins 12/11/13/10 */
+	pinmux_lpspi4: pinmux_lpspi4 {
+		group0 {
+			pinmux = <&iomuxc_gpio_b0_03_lpspi4_sck>,
+				<&iomuxc_gpio_b0_01_lpspi4_sdi>,
+				<&iomuxc_gpio_b0_02_lpspi4_sdo>;
+			drive-strength = "r0-6";
+			slew-rate = "slow";
+			nxp,speed = "100-mhz";
+		};
+	};
+};
+
+&lpspi4 {
+	status = "okay";	
+	pinctrl-0 = <&pinmux_lpspi4>;
+	pinctrl-names = "default";
+};
