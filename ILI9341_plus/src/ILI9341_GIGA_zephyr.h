@@ -241,7 +241,7 @@ public:
   //   pspi: either  &SPI (6 pin spi connector) or &SPI1 (shield pins)
   //   CS: Chip select pin,  DC: Data/Command pin
   //   RST: optional reset pin
-  ILI9341_GIGA_n(const struct device * const  pspi, const struct gpio_dt_spec *CS, const struct gpio_dt_spec *DC, const struct gpio_dt_spec *RST);
+  ILI9341_GIGA_n(struct spi_dt_spec * pspi, const struct gpio_dt_spec *CS, const struct gpio_dt_spec *DC, const struct gpio_dt_spec *RST);
   
 
   // Begin - main method to initialze the display.
@@ -528,8 +528,8 @@ public:
 //  void clearDMAInterruptStatus(uint8_t clear_flags);
 #endif
 
-  const struct device * const _pspi = nullptr;
-  const struct device *_spi_dev = nullptr;
+  struct spi_dt_spec *  _pspi = nullptr;
+  struct spi_dt_spec *_spi_dev = nullptr;
   struct spi_config _config, _config16;
 
   uint8_t _spi_num = 0;         // Which buss is this spi on?
@@ -680,14 +680,14 @@ public:
     gpio_pin_set_dt(pin, state);
   }
 
-  void beginSPITransaction(uint32_t clock) __attribute__((always_inline)) {
-    memset((void *)&_config, 0, sizeof(_config));
+  void beginSPITransaction(uint32_t clock) /*__attribute__((always_inline)) */{
+    //memset((void *)&_config, 0, sizeof(_config));
     _config.frequency = clock;
-    _config.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB;
+    //_config.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB;
 
-    memset((void *)&_config16, 0, sizeof(_config16));
+    //memset((void *)&_config16, 0, sizeof(_config16));
     _config16.frequency = clock;
-    _config16.operation = SPI_WORD_SET(16) | SPI_TRANSFER_MSB;
+    //_config16.operation = SPI_WORD_SET(16) | SPI_TRANSFER_MSB;
 
     digitalWrite(_cs, LOW);
 
@@ -731,10 +731,30 @@ public:
 //        .count = 1,
 //    };
 
-//    spi_transceive(_spi_dev, &_config, &tx_buf_set, &rx_buf_set);
-    spi_write(_spi_dev, &_config, &tx_buf_set);
+//    spi_transceive(_spi_dev->bus, &_config, &tx_buf_set, &rx_buf_set);
+    spi_write(_spi_dev->bus, &_config, &tx_buf_set);
 
     //_pspi->transfer(c);
+  }
+
+  void outputNToSPI(const uint8_t *pc, uint8_t cb) {
+    printk("OutputN(%p, %u): %x %x - %u %x %u\n", pc, cb, pc[0], pc[1], _config.frequency, _config.operation,
+        SPI_WORD_SIZE_GET(_config.operation));
+#if 0
+    uint8_t tmp_buf[16];
+    memcpy(tmp_buf, pc, cb);
+    const struct spi_buf tx_buf = {.buf = (void*)tmp_buf, .len = cb};
+    const struct spi_buf_set tx_buf_set = {
+        .buffers = &tx_buf,
+        .count = 1,
+    };
+    spi_write(_spi_dev->bus, &_config, &tx_buf_set);
+#else
+    while (cb) {
+      outputToSPI(*pc++);
+      cb--;
+    }
+#endif    
   }
 
   void outputToSPI16(uint16_t data) {
@@ -747,7 +767,7 @@ public:
         .count = 1,
     };
 
-    spi_write(_spi_dev, &_config16, &tx_buf_set);
+    spi_write(_spi_dev->bus, &_config16, &tx_buf_set);
 
     //_pspi->transfer(c);
 
@@ -846,7 +866,7 @@ public:
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(w * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
   }
   
   void VLine(int16_t x, int16_t y, int16_t h, uint16_t color)
@@ -879,7 +899,7 @@ public:
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(h * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
   }
   /**
    * Found in a pull request for the Adafruit framebuffer library. Clever!

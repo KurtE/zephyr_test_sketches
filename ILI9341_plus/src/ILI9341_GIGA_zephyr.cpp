@@ -75,7 +75,7 @@ uint16_t ILI9341_GIGA_n::s_row_buff[320]; //
 // use SPI pins
 // specific to each board type (e.g. 11,13 for Uno, 51,52 for Mega, etc.)
 
-ILI9341_GIGA_n::ILI9341_GIGA_n(const struct device * const  pspi, const struct gpio_dt_spec *CS, const struct gpio_dt_spec *DC, const struct gpio_dt_spec *RST) :
+ILI9341_GIGA_n::ILI9341_GIGA_n(struct spi_dt_spec * pspi, const struct gpio_dt_spec *CS, const struct gpio_dt_spec *DC, const struct gpio_dt_spec *RST) :
     _pspi(pspi), _spi_dev(pspi), _cs(CS), _dc(DC), _rst(RST) 
 {
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
@@ -162,7 +162,7 @@ void ILI9341_GIGA_n::drawFastVLine(int16_t x, int16_t y, int16_t h,
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(h * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
     endSPITransaction();
   }
   //printf("\tDFVL end\n");
@@ -215,7 +215,7 @@ void ILI9341_GIGA_n::drawFastHLine(int16_t x, int16_t y, int16_t w,
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(w * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
     endSPITransaction();
   }
 //  printf("\tDFHL end\n");
@@ -339,13 +339,15 @@ void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
     writecommand_cont(ILI9341_RAMWR);
     setDataMode();
 #if 1
+    _config16.operation |= SPI_HOLD_ON_CS;
     uint32_t count_pixels = w * h;
     uint16_t array_fill_count = min(count_pixels, sizeof(s_row_buff)/sizeof(s_row_buff[0]));
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(array_fill_count * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
     for (uint16_t i = 0; i < array_fill_count; i++) s_row_buff[i] = color;
     while (count_pixels) {
-      spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+      if (count_pixels <= array_fill_count)  _config16.operation &= ~SPI_HOLD_ON_CS;
+      spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
       count_pixels -= array_fill_count;
       if (count_pixels < array_fill_count) {
         array_fill_count = count_pixels;
@@ -829,7 +831,7 @@ void ILI9341_GIGA_n::writeRect(int16_t x, int16_t y, int16_t w, int16_t h,
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
     for (y = h; y > 0; y--) {
       tx_buf.buf = (void*)pcolors;
-      spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+      spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
       pcolors += image_width;
     }
     #else
@@ -847,7 +849,7 @@ void ILI9341_GIGA_n::writeRect(int16_t x, int16_t y, int16_t w, int16_t h,
     #if 0
     struct spi_buf tx_buf = { .buf = (void*)pcolors, .len = (size_t)(w * h * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
     #else
     uint32_t len = w * h;
     while (len > 1) {
@@ -1282,7 +1284,8 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
 //  _pspi->begin();
   //printk("\tAfter\n");
 
-//  pinMode(_cs, OUTPUT);
+// Lets see if the driver will drive it properly...
+  //pinMode(_cs, OUTPUT);
   gpio_pin_configure_dt(_cs, GPIO_OUTPUT_LOW | GPIO_ACTIVE_HIGH);
   digitalWrite(_cs, HIGH);
 
@@ -1315,12 +1318,16 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
           Serial.print("\nSelf Diagnostic: 0x"); Serial.println(x, HEX);
   */
   printk("\tBefore beginSPITransaction(%u)\n", _SPI_CLOCK/4);
+  memcpy(&_config, &_spi_dev->config, sizeof(_config) );
+  memcpy(&_config16, &_spi_dev->config, sizeof(_config) );
+  _config16.operation = (_config16.operation & ~SPI_WORD_SIZE_MASK) | SPI_WORD_SET(16);
+
   beginSPITransaction(_SPI_CLOCK/4);
   endSPITransaction();
-  beginSPITransaction(_SPI_CLOCK/4);
     outputToSPI(0x0); 
     outputToSPI(0x0); 
     k_sleep(K_MSEC(5));
+  beginSPITransaction(_SPI_CLOCK/4);
 
   const uint8_t *addr = init_commands;
   while (1) {
@@ -1329,11 +1336,21 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
       break;
     if (_pserDBG) _pserDBG->printf("\tWC:%x ", *addr);
     writecommand_cont(*addr++);
-    while (count-- > 0) {
-      if (_pserDBG) _pserDBG->printf(" %x", *addr);
-      writedata8_cont(*addr++);
+    setDataMode();
+
+    if (count) {
+      outputNToSPI(addr, count);
+      if (_pserDBG) {
+        for (uint8_t i = 0; i < count; i++) _pserDBG->printf(" %02X", addr[i]);
+        _pserDBG->print("\n");  
+      }
+      addr += count;
     }
-    if (_pserDBG) _pserDBG->printf("\n", *addr);
+//    while (count-- > 0) {
+//      if (_pserDBG) _pserDBG->printf(" %x", *addr);
+//      writedata8_cont(*addr++);
+//    }
+//    if (_pserDBG) _pserDBG->printf("\n", *addr);
   }
   writecommand_last(ILI9341_SLPOUT); // Exit Sleep
   endSPITransaction();
@@ -3880,7 +3897,7 @@ void ILI9341_GIGA_n::updateScreen(void) // call to say update the screen now.
       // lets call zephyr to do the work
       struct spi_buf tx_buf = { .buf = _pfbtft, .len = ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT * 2 };
       const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-      spi_transceive(_spi_dev, &_config16, &tx_buf_set, nullptr);
+      spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
       #endif
     } else {
       // setup just to output the clip rectangle area anded with updated area if

@@ -36,7 +36,10 @@ LOG_MODULE_REGISTER(cdc_acm_echo, LOG_LEVEL_INF);
 
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 //const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
-const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
+//const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
+#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB /*| SPI_MODE_CPOL | SPI_MODE_CPHA */)
+static struct spi_dt_spec ili9341_spi =
+	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
 
 //UARTDevice SerialX(serial_dev);
 UARTDevice USBSerial(usb_uart_dev);
@@ -46,19 +49,12 @@ inline int min(int a, int b) {
 	return (a <= b)? a : b;
 }
 
-// lets add LED
-/* The devicetree node identifier for the "led0" alias. */
-#if 0
-#define LED0_NODE DT_ALIAS(led0)
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
-#endif
-
 
 static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 
-ILI9341_GIGA_n tft(ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pins[2]);
+ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pins[2]);
 
 static inline void print_baudrate(const struct device *dev)
 {
@@ -217,12 +213,18 @@ int main(void)
 	USBSerial.printf("cs: %p %u %x\n", ili9341_pins[0].port, ili9341_pins[0].pin, ili9341_pins[0].dt_flags);
 	USBSerial.printf("dc: %p %u %x\n", ili9341_pins[1].port, ili9341_pins[1].pin, ili9341_pins[1].dt_flags);
 	USBSerial.printf("rst: %p %u %x\n",ili9341_pins[2].port, ili9341_pins[2].pin, ili9341_pins[2].dt_flags);
+	if (ARRAY_SIZE(ili9341_pins) > 3) {
+		USBSerial.printf("touch cs: %p %u %x\n",ili9341_pins[3].port, ili9341_pins[3].pin, ili9341_pins[3].dt_flags);
+  		gpio_pin_configure_dt(&ili9341_pins[3], GPIO_OUTPUT_LOW | GPIO_ACTIVE_HIGH);
+  		gpio_pin_set_dt(&ili9341_pins[3] , 1);
+	}
 
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 
 	tft.setDebugUART(&USBSerial);
 	tft.begin();
+	tft.setRotation(1);
 
 	tft.fillScreen(ILI9341_BLACK);
 	k_sleep(K_MSEC(2000));
@@ -233,7 +235,26 @@ int main(void)
 	tft.fillScreen(ILI9341_BLUE);
 	k_sleep(K_MSEC(2000));
 	tft.fillScreen(ILI9341_WHITE);
+	tft.drawLine(0, tft.height()/2, tft.width()-1, tft.height()/2, ILI9341_RED);
 
+	uint32_t *lpspi4_regs = (uint32_t*)0x403A0000ul;
+	USBSerial.printf(" VERID: %08X\n", lpspi4_regs[0x0/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" PARAM: %08X\n", lpspi4_regs[0x4/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" CR: %08X\n", lpspi4_regs[0x10/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" SR: %08X\n", lpspi4_regs[0x14/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" IER: %08X\n", lpspi4_regs[0x18/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" DER: %08X\n", lpspi4_regs[0x1C/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" CFGR0: %08X\n", lpspi4_regs[0x20/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" CFGR1: %08X\n", lpspi4_regs[0x24/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" DMR0: %08X\n", lpspi4_regs[0x30/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" DMR1: %08X\n", lpspi4_regs[0x34/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" CCR: %08X\n", lpspi4_regs[0x40/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" FCR: %08X\n", lpspi4_regs[0x58/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" FSR: %08X\n", lpspi4_regs[0x5C/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" TCR: %08X\n", lpspi4_regs[0x60/4]); k_sleep(K_MSEC(100));
+//	USBSerial.printf(" TDR: %08X\n", lpspi4_regs[0x64/4]); k_sleep(K_MSEC(100)); // Write only register
+	USBSerial.printf(" RSR: %08X\n", lpspi4_regs[0x70/4]); k_sleep(K_MSEC(100));
+	USBSerial.printf(" RDR: %08X\n", lpspi4_regs[0x74/4]); k_sleep(K_MSEC(100));
 
   	for (;;) {
 //		gpio_pin_toggle_dt(&led);

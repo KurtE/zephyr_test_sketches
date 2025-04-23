@@ -15,34 +15,16 @@
 	aliases {
 	};
 	zephyr,user {
-//		digital-pin-gpios = <&micromod_header 0 0>,
-//						<&micromod_header 1 0>,
-//						<&micromod_header 2 0>,
-//						<&micromod_header 3 0>,
-//						<&micromod_header 4 0>,
-//						<&micromod_header 5 0>,
-//						<&micromod_header 6 0>,
-//						<&micromod_header 7 0>,
-//						<&micromod_header 8 0>,
-//						<&micromod_header 9 0>,
-//						<&micromod_header 10 0>,
-//						<&micromod_header 11 0>,
-//						<&micromod_header 12 0>,
-//						<&micromod_header 13 0>,
-//						<&micromod_header 14 0>,
-//						<&micromod_header 15 0>,
-//						<&micromod_header 16 0>,
-//						<&micromod_header 17 0>;
-//
-		ili9341-gpios = <&gpio2 12 GPIO_ACTIVE_HIGH>,	/* CS PIN 32 mmod */
+		ili9341-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>,	/* CS PIN 32 mmod */
 						<&gpio2 11 GPIO_ACTIVE_HIGH>,	/* DC PIN 9 mmod */
-						<&gpio3 22 GPIO_ACTIVE_HIGH>;	/* RST Pin 31 */
+						<&gpio3 22 GPIO_ACTIVE_HIGH>,	/* RST Pin 31 */
+						<&gpio1 30 GPIO_ACTIVE_LOW>;	/* touch cs Pin 26 */
 
 	};
 	
 	chosen {
 		//uart,passthrough = &lpuart4; // Teensy pins 7(RX) 8(TX)
-		spi,ili9341 = &lpspi4;
+		//spi,ili9341 = &lpspi4;
 
 	};
 };
@@ -61,14 +43,25 @@
 				<&iomuxc_gpio_b0_01_lpspi4_sdi>,
 				<&iomuxc_gpio_b0_02_lpspi4_sdo>;
 			drive-strength = "r0-6";
-			slew-rate = "slow";
+			slew-rate = "fast";
 			nxp,speed = "100-mhz";
 		};
 	};
 };
 
 &lpspi4 {
+	transfer-delay = <2>;
 	status = "okay";	
 	pinctrl-0 = <&pinmux_lpspi4>;
+	pcs-sck-delay= <2>;
+	sck-pcs-delay= <2>;
 	pinctrl-names = "default";
+
+	cs-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;
+	ili9341_spi_dev: ili9341_spi_dev@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+	};
+
 };
