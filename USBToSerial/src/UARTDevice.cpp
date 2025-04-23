@@ -65,6 +65,8 @@ size_t UARTDevice::print(const char *sz) {
 	return write((const uint8_t*)sz, strlen(sz));
 }
 
+
+
 size_t UARTDevice::printf(const char *format, ...) {
 	char buffer[80];
 	va_list ap;

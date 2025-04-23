@@ -441,9 +441,10 @@ public:
   }
 
   // overwrite print functions:
+
   virtual size_t write(uint8_t);
   virtual size_t write(const uint8_t *buffer, size_t size);
-
+  size_t println(const char *sz);
   int16_t width(void) { return _width; }
   int16_t height(void) { return _height; }
   uint8_t getRotation(void);
@@ -656,7 +657,7 @@ public:
   void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
       __attribute__((always_inline)) {
 
-    if (_pserDBG) _pserDBG->printf("\tsetAddr(%u, %u, %u, %u)\n", x0, y0, x1, y1);
+    //if (_pserDBG) _pserDBG->printf("\tsetAddr(%u, %u, %u, %u)\n", x0, y0, x1, y1);
 
     if ((x0 != _x0_last) || (x1 != _x1_last)) {
       writecommand_cont(ILI9341_CASET); // Column addr set

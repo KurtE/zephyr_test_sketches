@@ -279,7 +279,7 @@ void ILI9341_GIGA_n::fillScreen(uint16_t color) {
 void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
                            uint16_t color) {
   // printf("\tfillRect(%d, %d, %d, %d, %x)\n", x, y, w, h, color);
-  if (_pserDBG) _pserDBG->printf("Fillrect(%d, %d, %d, %d, %x)\n", x, y, w, h, color);
+  //if (_pserDBG) _pserDBG->printf("Fillrect(%d, %d, %d, %d, %x)\n", x, y, w, h, color);
   x += _originx;
   y += _originy;
 
@@ -301,7 +301,7 @@ void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
   if ((y + h - 1) >= _displayclipy2)
     h = _displayclipy2 - y;
   
-  if (_pserDBG) _pserDBG->printf("\tX(%d %d) Y(%d %d) -> (%d, %d, %d, %d)\n", _displayclipx1, _displayclipx2, _displayclipy1, _displayclipy2, x, y, w, h);
+  //if (_pserDBG) _pserDBG->printf("\tX(%d %d) Y(%d %d) -> (%d, %d, %d, %d)\n", _displayclipx1, _displayclipx2, _displayclipy1, _displayclipy2, x, y, w, h);
 
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
   if (_use_fbtft) {
@@ -1764,6 +1764,11 @@ void ILI9341_GIGA_n::drawBitmap(int16_t x, int16_t y, const uint8_t *bitmap,
 }
 
 // overwrite functions from class Print:
+size_t ILI9341_GIGA_n::println(const char *sz) {
+  size_t cb_ret = write((const uint8_t *)sz, strlen(sz));
+  write('\n');
+  return cb_ret + 1;
+}
 
 
 size_t ILI9341_GIGA_n::write(uint8_t c) { return write(&c, 1); }
