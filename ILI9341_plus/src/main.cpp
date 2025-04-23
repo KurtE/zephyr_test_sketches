@@ -37,7 +37,7 @@ LOG_MODULE_REGISTER(cdc_acm_echo, LOG_LEVEL_INF);
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 //const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
 //const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
-#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB /*| SPI_MODE_CPOL | SPI_MODE_CPHA */)
+#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_MODE_CPOL | SPI_MODE_CPHA )
 static struct spi_dt_spec ili9341_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
 

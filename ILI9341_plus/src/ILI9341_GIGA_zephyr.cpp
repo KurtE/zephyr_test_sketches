@@ -279,6 +279,7 @@ void ILI9341_GIGA_n::fillScreen(uint16_t color) {
 void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
                            uint16_t color) {
   // printf("\tfillRect(%d, %d, %d, %d, %x)\n", x, y, w, h, color);
+  if (_pserDBG) _pserDBG->printf("Fillrect(%d, %d, %d, %d, %x)\n", x, y, w, h, color);
   x += _originx;
   y += _originy;
 
@@ -299,6 +300,8 @@ void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
     w = _displayclipx2 - x;
   if ((y + h - 1) >= _displayclipy2)
     h = _displayclipy2 - y;
+  
+  if (_pserDBG) _pserDBG->printf("\tX(%d %d) Y(%d %d) -> (%d, %d, %d, %d)\n", _displayclipx1, _displayclipx2, _displayclipy1, _displayclipy2, x, y, w, h);
 
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
   if (_use_fbtft) {
@@ -1339,6 +1342,7 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
     setDataMode();
 
     if (count) {
+     _config.operation |= SPI_HOLD_ON_CS;
       outputNToSPI(addr, count);
       if (_pserDBG) {
         for (uint8_t i = 0; i < count; i++) _pserDBG->printf(" %02X", addr[i]);

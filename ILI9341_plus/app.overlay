@@ -50,11 +50,11 @@
 };
 
 &lpspi4 {
-	transfer-delay = <2>;
+	transfer-delay = <150>;
 	status = "okay";	
 	pinctrl-0 = <&pinmux_lpspi4>;
-	pcs-sck-delay= <2>;
-	sck-pcs-delay= <2>;
+	pcs-sck-delay= <50>;
+	sck-pcs-delay= <50>;
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;

@@ -655,20 +655,23 @@ public:
 
   void setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
       __attribute__((always_inline)) {
-    //if ((x0 != _x0_last) || (x1 != _x1_last)) {
+
+    if (_pserDBG) _pserDBG->printf("\tsetAddr(%u, %u, %u, %u)\n", x0, y0, x1, y1);
+
+    if ((x0 != _x0_last) || (x1 != _x1_last)) {
       writecommand_cont(ILI9341_CASET); // Column addr set
       writedata16_cont(x0);             // XSTART
       writedata16_cont(x1);             // XEND
       _x0_last = x0;
       _x1_last = x1;
-    //}
-    //if ((y0 != _y0_last) || (y1 != _y1_last)) {
+    }
+    if ((y0 != _y0_last) || (y1 != _y1_last)) {
       writecommand_cont(ILI9341_PASET); // Row addr set
       writedata16_cont(y0);             // YSTART
       writedata16_cont(y1);             // YEND
       _y0_last = y0;
       _y1_last = y1;
-    //}
+    }
   }
 //. From Onewire utility files
 
@@ -759,45 +762,58 @@ public:
 
   void outputToSPI16(uint16_t data) {
     //_pspi->transfer16(data);
-//    outputToSPI(data >> 8); //MSB
-//    outputToSPI(data & 0xff);
-    const struct spi_buf tx_buf = {.buf = &data, .len = sizeof(data)};
-    const struct spi_buf_set tx_buf_set = {
-        .buffers = &tx_buf,
-        .count = 1,
-    };
+    outputToSPI(data >> 8); //MSB
+    outputToSPI(data & 0xff);
 
-    spi_write(_spi_dev->bus, &_config16, &tx_buf_set);
+//    const struct spi_buf tx_buf = {.buf = &data, .len = sizeof(data)};
+//    const struct spi_buf_set tx_buf_set = {
+//        .buffers = &tx_buf,
+//        .count = 1,
+//    };
+
+//    spi_write(_spi_dev->bus, &_config16, &tx_buf_set);
 
     //_pspi->transfer(c);
 
   }
 
   void writecommand_cont(uint8_t c) {
+    _config.operation |= SPI_HOLD_ON_CS;
     setCommandMode();
     outputToSPI(c);
   }
   void writedata8_cont(uint8_t c) {
+    _config.operation |= SPI_HOLD_ON_CS;
     setDataMode();
     outputToSPI(c);
   }
 
-  void writedata16_cont(uint16_t c) {
+  void writedata16_cont(uint16_t data) {
+  //  _config16.operation |= SPI_HOLD_ON_CS;
     setDataMode();
-    outputToSPI16(c);
+    _config.operation |= SPI_HOLD_ON_CS;
+    outputToSPI(data >> 8); //MSB
+    outputToSPI(data & 0xff);
+//    outputToSPI16(c);
   }
 
   void writecommand_last(uint8_t c) {
+    _config.operation &= ~SPI_HOLD_ON_CS;
     setCommandMode();
     outputToSPI(c);
   }
   void writedata8_last(uint8_t c) {
+    _config.operation &= ~SPI_HOLD_ON_CS;
     setDataMode();
     outputToSPI(c);
   }
-  void writedata16_last(uint16_t c) {
+  void writedata16_last(uint16_t data) {
+ //   _config16.operation &= ~SPI_HOLD_ON_CS;
     setDataMode();
-    outputToSPI16(c);
+    _config.operation |= SPI_HOLD_ON_CS;
+    outputToSPI(data >> 8); //MSB
+    outputToSPI(data & 0xff);
+//    outputToSPI16(c);
   }
 //////////////////////////////////////////////////////////////////
 
