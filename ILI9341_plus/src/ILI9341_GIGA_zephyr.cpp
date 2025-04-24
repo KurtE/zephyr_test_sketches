@@ -162,10 +162,22 @@ void ILI9341_GIGA_n::drawFastVLine(int16_t x, int16_t y, int16_t h,
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(h * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
+
+    if (tx_buf.len > 80) {
+      _config16.operation |= SPI_HOLD_ON_CS;
+      uint32_t len = tx_buf.len;
+      tx_buf.len = 80;
+      while (len > 80) {
+        spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+        len -= 80;
+      }
+      tx_buf.len = len;
+      _config16.operation &= ~SPI_HOLD_ON_CS;
+    }
     spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+
     endSPITransaction();
   }
-  //printf("\tDFVL end\n");
 }
 
 void ILI9341_GIGA_n::drawFastHLine(int16_t x, int16_t y, int16_t w,
@@ -209,13 +221,22 @@ void ILI9341_GIGA_n::drawFastHLine(int16_t x, int16_t y, int16_t w,
   {
     beginSPITransaction(_SPI_CLOCK);
     setAddr(x, y, x + w - 1, y);
+
     writecommand_cont(ILI9341_RAMWR);
     setDataMode();
     for (uint16_t i = 0; i < w; i++) s_row_buff[i] = color;
 
     struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(w * 2 )};
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
+    if (tx_buf.len > 64) {
+      _config16.operation |= SPI_HOLD_ON_CS;
+      tx_buf.len -= 64;
+      spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+      tx_buf.len = 64;
+      _config16.operation &= ~SPI_HOLD_ON_CS;
+    }
     spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+
     endSPITransaction();
   }
 //  printf("\tDFHL end\n");

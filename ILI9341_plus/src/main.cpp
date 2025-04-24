@@ -54,7 +54,14 @@ inline void delay(uint32_t ms) {
 }
 
 // Need to do this.
-unsigned long micros() { return 0;}
+unsigned long micros(void) {
+#ifdef CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER
+  return k_cyc_to_us_floor32(k_cycle_get_64());
+#else
+  return k_cyc_to_us_floor32(k_cycle_get_32());
+#endif
+ }
+
 
 static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
@@ -150,6 +157,7 @@ extern unsigned long testTriangles();
 extern unsigned long testFilledTriangles();
 extern unsigned long testRoundRects();
 extern unsigned long testFilledRoundRects();
+extern void WaitForUserInput();
 
 
 int main(void)
@@ -221,6 +229,7 @@ int main(void)
 //  		USBSerial.printf("%u %p %u\n", i, connector_pins[i].port, connector_pins[i].pin);
 //  	}
   	// Main loop, would be nice if we setup events for the two RX queues, but startof KISS
+#if 0
 	USBSerial.printf("cs: %p %u %x\n", ili9341_pins[0].port, ili9341_pins[0].pin, ili9341_pins[0].dt_flags);
 	USBSerial.printf("dc: %p %u %x\n", ili9341_pins[1].port, ili9341_pins[1].pin, ili9341_pins[1].dt_flags);
 	USBSerial.printf("rst: %p %u %x\n",ili9341_pins[2].port, ili9341_pins[2].pin, ili9341_pins[2].dt_flags);
@@ -229,7 +238,7 @@ int main(void)
   		gpio_pin_configure_dt(&ili9341_pins[3], GPIO_OUTPUT_LOW | GPIO_ACTIVE_HIGH);
   		gpio_pin_set_dt(&ili9341_pins[3] , 1);
 	}
-
+#endif
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 
@@ -238,14 +247,15 @@ int main(void)
 	tft.setRotation(1);
 
 	tft.fillScreen(ILI9341_BLACK);
-	k_sleep(K_MSEC(2000));
+	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_RED);
-	k_sleep(K_MSEC(2000));
+	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_GREEN);
-	k_sleep(K_MSEC(2000));
+	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_BLUE);
-	k_sleep(K_MSEC(2000));
+	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_WHITE);
+#if 0
 	tft.drawLine(0, tft.height()/2, tft.width()-1, tft.height()/2, ILI9341_RED);
 
 	uint32_t *lpspi4_regs = (uint32_t*)0x403A0000ul;
@@ -267,55 +277,70 @@ int main(void)
 	USBSerial.printf(" RSR: %08X\n", lpspi4_regs[0x70/4]); k_sleep(K_MSEC(100));
 	USBSerial.printf(" RDR: %08X\n", lpspi4_regs[0x74/4]); k_sleep(K_MSEC(100));
 
-
+#endif
+  
 	// lets try the graphic tests
   USBSerial.print("Benchmark                Time (microseconds)\n");
 
   USBSerial.print("Screen fill              ");
   USBSerial.println(testFillScreen());
+  WaitForUserInput();
   delay(200);
 
   USBSerial.print("Text                     ");
   USBSerial.println(testText());
   delay(600);
+  WaitForUserInput();
 
   USBSerial.print("Lines                    ");
   USBSerial.println(testLines(ILI9341_CYAN));
   delay(200);
+  
+
+  WaitForUserInput();
 
   USBSerial.print("Horiz/Vert Lines         ");
   USBSerial.println(testFastLines(ILI9341_RED, ILI9341_BLUE));
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Rectangles (outline)     ");
   USBSerial.println(testRects(ILI9341_GREEN));
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Rectangles (filled)      ");
   USBSerial.println(testFilledRects(ILI9341_YELLOW, ILI9341_MAGENTA));
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Circles (filled)         ");
   USBSerial.println(testFilledCircles(10, ILI9341_MAGENTA));
+  WaitForUserInput();
 
   USBSerial.print("Circles (outline)        ");
   USBSerial.println(testCircles(10, ILI9341_WHITE));
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Triangles (outline)      ");
   USBSerial.println(testTriangles());
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Triangles (filled)       ");
   USBSerial.println(testFilledTriangles());
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Rounded rects (outline)  ");
   USBSerial.println(testRoundRects());
   delay(200);
+  WaitForUserInput();
 
   USBSerial.print("Rounded rects (filled)   ");
   USBSerial.println(testFilledRoundRects());
+  WaitForUserInput();
 
 
 
@@ -423,9 +448,10 @@ unsigned long testFastLines(uint16_t color1, uint16_t color2) {
   int           x, y, w = tft.width(), h = tft.height();
 
   tft.fillScreen(ILI9341_BLACK);
+  USBSerial.printf("W:%u H:%u\n", tft.width(), tft.height());
   start = micros();
-  for (y = 0; y < h; y += 5) tft.drawFastHLine(0, y, w, color1);
-  for (x = 0; x < w; x += 5) tft.drawFastVLine(x, 0, h, color2);
+  for (y = 0; y < h; y += 5) {tft.drawFastHLine(0, y, w, color1); USBSerial.printf("H: %d %d %x\n", y, w, color1);}
+  for (x = 0; x < w; x += 5) {tft.drawFastVLine(x, 0, h, color2); USBSerial.printf("V: %d %d %x\n", x, h, color2);}
 
   return micros() - start;
 }
@@ -571,3 +597,9 @@ unsigned long testFilledRoundRects() {
   return micros() - start;
 }
 
+void WaitForUserInput() {
+    USBSerial.print("Hit key to continue\n");
+    while (USBSerial.read() == -1) ;
+    while (USBSerial.read() != -1) ;
+    USBSerial.print("Done!\n");
+}
