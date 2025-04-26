@@ -19,6 +19,7 @@
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/uart/cdc_acm.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
 
@@ -93,6 +94,17 @@ static inline void print_baudrate(const struct device *dev)
 	}
 }
 
+void _baudChangeHandler(const struct device *dev, uint32_t rate)
+{
+    //uart_line_ctrl_get(usb_uart_dev, UART_LINE_CTRL_BAUD_RATE, &baudrate);
+    printk("\n$$$ Baud rate handler called: %p %u\n", dev, rate);
+//    if (baudrate == 1200) {
+//        usb_disable();
+//        _on_1200_bps();
+//    }
+}
+
+
 #if defined(CONFIG_USB_DEVICE_STACK_NEXT)
 static struct usbd_context *sample_usbd;
 K_SEM_DEFINE(dtr_sem, 0, 1);
@@ -132,7 +144,7 @@ static void sample_msg_cb(struct usbd_context *const ctx, const struct usbd_msg 
 static int enable_usb_device_next(void)
 {
 	int err;
-
+  printk("enable_usb_device_next called\n");
 	sample_usbd = sample_usbd_init_device(sample_msg_cb);
 	if (sample_usbd == NULL) {
 		LOG_ERR("Failed to initialize USB device");
@@ -227,6 +239,9 @@ int main(void)
 
 #ifndef CONFIG_USB_DEVICE_STACK_NEXT
 	print_baudrate(usb_uart_dev);
+#ifdef  CONFIG_CDC_ACM_DTE_RATE_CALLBACK_SUPPORT 
+  cdc_acm_dte_rate_callback_set(usb_uart_dev, _baudChangeHandler);
+#endif
 #endif
 //	uart_irq_callback_set(usb_uart_dev, interrupt_handler);
 	/* Enable rx interrupts */
@@ -253,7 +268,7 @@ int main(void)
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 
-	tft.setDebugUART(&USBSerial);
+	//tft.setDebugUART(&USBSerial);
 	tft.begin();
 	tft.setRotation(1);
 

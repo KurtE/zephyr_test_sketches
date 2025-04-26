@@ -742,8 +742,7 @@ public:
   }
 
   void outputNToSPI(const uint8_t *pc, uint8_t cb) {
-    printk("OutputN(%p, %u): %x %x - %u %x %u\n", pc, cb, pc[0], pc[1], _config.frequency, _config.operation,
-        SPI_WORD_SIZE_GET(_config.operation));
+//    printk("OutputN(%p, %u): %x %x - %u %x %u\n", pc, cb, pc[0], pc[1], _config.frequency, _config.operation,
 #if 0
     uint8_t tmp_buf[16];
     memcpy(tmp_buf, pc, cb);
@@ -852,9 +851,36 @@ public:
       _changed_max_y = y;
   }
 
+  void SPITransceiveWriteBufferHelper(uint32_t pixel_count, uint16_t color) {
+    // Extracted from several functions, that output the
+    // same color N times and we need to keep the CS pin
+    // selected
+//    if (_pserDBG)_pserDBG->printf("    helper:%u %x)\n", pixel_count, color);
+    writecommand_cont(ILI9341_RAMWR);
+    setDataMode();
+    #define CB_WRITE 160
+    uint8_t fill_count = (pixel_count <= (CB_WRITE/2))? pixel_count : (CB_WRITE / 2);
+    for (uint16_t i = 0; i < fill_count; i++) s_row_buff[i] = color;
+
+    uint32_t len = pixel_count * 2;
+    struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = CB_WRITE * 2};
+    const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
+
+    if (len > CB_WRITE) {
+        _config16.operation |= SPI_HOLD_ON_CS;
+        while (len > CB_WRITE) {
+            spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+            len -= CB_WRITE;
+        }
+      _config16.operation &= ~SPI_HOLD_ON_CS;
+    }
+    tx_buf.len = len;
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);      
+  }
 
   void HLine(int16_t x, int16_t y, int16_t w, uint16_t color)
       __attribute__((always_inline)) {
+    if (_pserDBG)_pserDBG->printf("  HL(%d %d %d %x)\n", x, y, w, color);
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
     if (_use_fbtft) {
       drawFastHLine(x, y, w, color);
@@ -877,17 +903,12 @@ public:
       return;
 
     setAddr(x, y, x + w - 1, y);
-    writecommand_cont(ILI9341_RAMWR);
-    setDataMode();
-    for (uint16_t i = 0; i < w; i++) s_row_buff[i] = color;
-
-    struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(w * 2 )};
-    const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+    SPITransceiveWriteBufferHelper(w, color);
   }
   
   void VLine(int16_t x, int16_t y, int16_t h, uint16_t color)
       __attribute__((always_inline)) {
+    if (_pserDBG)_pserDBG->printf("  VL(%d %d %d %x)\n", x, y, h, color);
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
     if (_use_fbtft) {
       drawFastVLine(x, y, h, color);
@@ -910,13 +931,7 @@ public:
       return;
 
     setAddr(x, y, x, y + h - 1);
-    writecommand_cont(ILI9341_RAMWR);
-    setDataMode();
-    for (uint16_t i = 0; i < h; i++) s_row_buff[i] = color;
-
-    struct spi_buf tx_buf = { .buf = (void*)s_row_buff, .len = (size_t)(h * 2 )};
-    const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+    SPITransceiveWriteBufferHelper(h, color);
   }
   /**
    * Found in a pull request for the Adafruit framebuffer library. Clever!

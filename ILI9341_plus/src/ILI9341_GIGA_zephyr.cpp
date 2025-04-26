@@ -1636,6 +1636,7 @@ void ILI9341_GIGA_n::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 // Draw a rectangle
 void ILI9341_GIGA_n::drawRect(int16_t x, int16_t y, int16_t w, int16_t h,
                            uint16_t color) {
+  if (_pserDBG)_pserDBG->printf("DR(%d, %d, %d, %d, %x\n", x, y, w, h, color);
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
   if (_use_fbtft) {
     drawFastHLine(x, y, w, color);
