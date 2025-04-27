@@ -1,4 +1,3 @@
-#define USE_ATP_BOARD
 /*
  * Copyright (c) 2019 Intel Corporation
  *
@@ -19,7 +18,6 @@
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/drivers/uart/cdc_acm.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
 
@@ -33,11 +31,27 @@ LOG_MODULE_REGISTER(cdc_acm_echo, LOG_LEVEL_INF);
 #include "UARTDevice.h"
 #include "ILI9341_GIGA_zephyr.h"
 
+//#define ATP
+//#define PJRC
+
 //static const struct gpio_dt_spec connector_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
 //    DT_PATH(zephyr_user), digital_pin_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 //const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
+//const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
+#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB )
+
+#if defined(ATP)
+static struct spi_dt_spec ili9341_spi =
+	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341atp_spi_dev), SPI_OP, 0);
+#elif defined(PJRC)
+static struct spi_dt_spec ili9341_spi =
+	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341prjc_spi_dev), SPI_OP, 0);
+#else
+static struct spi_dt_spec ili9341_spi =
+	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
+#endif
 
 //UARTDevice SerialX(serial_dev);
 UARTDevice USBSerial(usb_uart_dev);
@@ -60,21 +74,13 @@ unsigned long micros(void) {
 #endif
  }
 
-
-//const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
-#ifdef USE_ATP_BOARD
-#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB )
-static struct spi_dt_spec ili9341_spi =
-  SPI_DT_SPEC_GET(DT_NODELABEL(ili9341atp_spi_dev), SPI_OP, 0);
-
+#if defined(ATP)
 static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341atp_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
-
-#else 
-#define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_MODE_CPOL | SPI_MODE_CPHA )
-static struct spi_dt_spec ili9341_spi =
-  SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
-
+#elif defined(PJRC)
+static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
+    DT_PATH(zephyr_user), ili9341pjrc_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
+#else
 static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 #endif
@@ -93,17 +99,6 @@ static inline void print_baudrate(const struct device *dev)
 		LOG_INF("Baudrate %u", baudrate);
 	}
 }
-
-void _baudChangeHandler(const struct device *dev, uint32_t rate)
-{
-    //uart_line_ctrl_get(usb_uart_dev, UART_LINE_CTRL_BAUD_RATE, &baudrate);
-    printk("\n$$$ Baud rate handler called: %p %u\n", dev, rate);
-//    if (baudrate == 1200) {
-//        usb_disable();
-//        _on_1200_bps();
-//    }
-}
-
 
 #if defined(CONFIG_USB_DEVICE_STACK_NEXT)
 static struct usbd_context *sample_usbd;
@@ -144,7 +139,7 @@ static void sample_msg_cb(struct usbd_context *const ctx, const struct usbd_msg 
 static int enable_usb_device_next(void)
 {
 	int err;
-  printk("enable_usb_device_next called\n");
+
 	sample_usbd = sample_usbd_init_device(sample_msg_cb);
 	if (sample_usbd == NULL) {
 		LOG_ERR("Failed to initialize USB device");
@@ -239,9 +234,6 @@ int main(void)
 
 #ifndef CONFIG_USB_DEVICE_STACK_NEXT
 	print_baudrate(usb_uart_dev);
-#ifdef  CONFIG_CDC_ACM_DTE_RATE_CALLBACK_SUPPORT 
-  cdc_acm_dte_rate_callback_set(usb_uart_dev, _baudChangeHandler);
-#endif
 #endif
 //	uart_irq_callback_set(usb_uart_dev, interrupt_handler);
 	/* Enable rx interrupts */
@@ -268,7 +260,7 @@ int main(void)
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 	//USBSerial.printf("SPI readdy? %c\n"), spi_is_ready_dt(&ili9341_spi)? 'Y': 'N');
 
-	//tft.setDebugUART(&USBSerial);
+	tft.setDebugUART(&USBSerial);
 	tft.begin();
 	tft.setRotation(1);
 
