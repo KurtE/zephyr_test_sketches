@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2021 Bosch Sensortec GmbH
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+&micromod_0_i2c {
+	status = "okay";
+
+	bmi270@68 {
+		compatible = "bosch,bmi270";
+		reg = <0x68>;
+    label = "BMI270";
+	};
+  
+	bmm150@13 {
+		compatible = "bosch,bmm150";
+		reg = <0x13>;
+		label = "BMM150";
+	};
+};
