@@ -31,7 +31,7 @@ LOG_MODULE_REGISTER(cdc_acm_echo, LOG_LEVEL_INF);
 #include "UARTDevice.h"
 #include "ILI9341_GIGA_zephyr.h"
 
-//#define ATP
+#define ATP
 //#define PJRC
 
 //static const struct gpio_dt_spec connector_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
