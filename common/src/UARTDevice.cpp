@@ -65,6 +65,18 @@ size_t UARTDevice::print(const char *sz) {
 	return write((const uint8_t*)sz, strlen(sz));
 }
 
+size_t UARTDevice::println(const char *sz) {
+	size_t cb = write((const uint8_t*)sz, strlen(sz));
+	cb += println();
+	return cb;
+}
+
+size_t UARTDevice::println() {
+	return write((const uint8_t*)"\n", 1);
+}
+
+
+
 size_t UARTDevice::println(unsigned long ul) {
 	char buffer[10];
 	sprintf(buffer, "%lu\n");

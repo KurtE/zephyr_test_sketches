@@ -25,6 +25,8 @@ public:
 	size_t write(const uint8_t *buffer, size_t size);
 	size_t write(const uint8_t data) { return write(&data, 1); }
 	size_t print(const char *sz);
+	size_t println(const char *sz);
+	size_t println();
 	size_t println(unsigned long ul); // total place holder
 	size_t printf(const char *format, ...);
 	int available();
