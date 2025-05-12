@@ -1,0 +1,116 @@
+/*
+ * Copyright (c) 2021 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+/ {
+	aliases {
+	};
+	zephyr,user {
+		ili9341-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>,	/* CS PIN 32 mmod */
+						<&gpio2 11 GPIO_ACTIVE_HIGH>,	/* DC PIN 9 mmod */
+						<&gpio3 22 GPIO_ACTIVE_HIGH>,	/* RST Pin 31 */
+						<&gpio1 30 GPIO_ACTIVE_LOW>;	/* touch cs Pin 26 */
+
+		/* ATP with our Teensy adapter*/
+		ili9341atp-gpios = <&gpio4 8 GPIO_ACTIVE_LOW>,	/* CS PIN 5 mmod */
+						<&gpio4 6 GPIO_ACTIVE_HIGH>,	/* DC PIN 4 mmod */
+						<&gpio4 4 GPIO_ACTIVE_HIGH>,	/* RST Pin 2 */
+						<&gpio1 30 GPIO_ACTIVE_LOW>;	/* touch cs Pin 26 */
+            
+    /* PJRC Teensy ATP Board  */
+		ili9341pjrc-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>,	/* CS PIN 10 mmod */
+						<&gpio2 11 GPIO_ACTIVE_HIGH>,	/* DC PIN 9 mmod */
+						<&gpio3 22 GPIO_ACTIVE_HIGH>,	/* RST Pin 31 */
+						<&gpio1 31 GPIO_ACTIVE_LOW>;	/* touch cs Pin 27 */
+
+		xpt2046-gpios = <&gpio1 30 GPIO_ACTIVE_LOW>, <&gpio1 31 GPIO_ACTIVE_HIGH>;
+
+	};
+	
+	chosen {
+		//uart,passthrough = &lpuart4; // Teensy pins 7(RX) 8(TX)
+		//zephyr,touch = &xpt2046;
+
+
+	};
+};
+
+&lpuart4 {
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&pinctrl {
+
+	/* LPSPI4 MISO, MOSI, SCK, CS on Teensy-Pins 12/11/13/10 */
+	pinmux_lpspi4: pinmux_lpspi4 {
+		group0 {
+			pinmux = <&iomuxc_gpio_b0_03_lpspi4_sck>,
+				<&iomuxc_gpio_b0_01_lpspi4_sdi>,
+				<&iomuxc_gpio_b0_02_lpspi4_sdo>;
+			drive-strength = "r0-6";
+			slew-rate = "fast";
+			nxp,speed = "100-mhz";
+		};
+	};
+};
+
+&lpspi4 {
+	transfer-delay = <50>;
+	status = "okay";	
+	pinctrl-0 = <&pinmux_lpspi4>;
+	pcs-sck-delay= <25>;
+	sck-pcs-delay= <25>;
+	pinctrl-names = "default";
+
+	cs-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>,  <&gpio4 8 GPIO_ACTIVE_LOW>,  <&gpio2 17 GPIO_ACTIVE_LOW>, <&gpio1 30 GPIO_ACTIVE_LOW>;
+  
+	ili9341_spi_dev: ili9341_spi_dev@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+	};
+
+	ili9341atp_spi_dev: ili9341atp_spi_dev@1 {
+		compatible = "vnd,spi-device";
+		reg = <1>;
+		spi-max-frequency = <30000000>;
+	};
+
+	ili9341prjc_spi_dev: ili9341pjrc_spi_dev@2 {
+		compatible = "vnd,spi-device";
+		reg = <2>;
+		spi-max-frequency = <30000000>;
+	};
+
+	/* 26 is CS 27 is Interrupt */
+
+	xpt2046_spi_dev: xpt2046_spi_dev@3 {
+		compatible = "vnd,spi-device";
+		reg = <3>;
+		spi-max-frequency = <2000000>;
+	};
+
+	//xpt2046: xpt2046@3 {
+	//	compatible = "xptek,xpt2046";
+	//	reg = <3>;
+	//	int-gpios = <&gpio1 31 GPIO_ACTIVE_HIGH>; 
+	//	touchscreen-size-x = <1000>;
+	//	touchscreen-size-y = <1000>;
+	//	min-x = <0>;
+	//	min-y = <0>;
+	//	max-x = <4000>;
+	//	max-y = <4000>;
+	//	spi-max-frequency = <1000000>;
+	//	status = "okay";
+	//};
+};
