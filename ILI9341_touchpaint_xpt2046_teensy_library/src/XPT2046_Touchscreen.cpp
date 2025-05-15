@@ -40,6 +40,8 @@ static XPT2046_Touchscreen 	*isrPinptr;
 
 static void xpt2046_isr_handler(const struct device *dev, struct gpio_callback *cb, uint32_t pins);
 
+const struct gpio_dt_spec *XPT2046_Touchscreen::tdbgPin;
+
 bool XPT2046_Touchscreen::begin()
 {
 	int r;
@@ -58,11 +60,11 @@ bool XPT2046_Touchscreen::begin()
 //  gpio_pin_configure_dt(csPin, GPIO_OUTPUT_LOW | GPIO_ACTIVE_HIGH);
 //	digitalWrite(csPin, HIGH);
 	if (tirqPin) {
-	  gpio_pin_configure_dt(csPin, GPIO_INPUT | GPIO_ACTIVE_HIGH);
+	  gpio_pin_configure_dt(tirqPin, GPIO_INPUT);
 //		attachInterrupt(digitalPinToInterrupt(tirqPin), isrPin, FALLING);
-		r = gpio_pin_interrupt_configure_dt(tirqPin, GPIO_INT_EDGE_TO_ACTIVE);
+		r = gpio_pin_interrupt_configure_dt(tirqPin, GPIO_INT_EDGE_TO_INACTIVE);
 		if (r < 0) {
-			//LOG_ERR("Could not configure interrupt GPIO interrupt.");
+			printk("Could not configure interrupt GPIO interrupt.\n");
 			return false;
 		}
 
@@ -70,10 +72,14 @@ bool XPT2046_Touchscreen::begin()
 
 		r = gpio_add_callback(tirqPin->port, &int_gpio_cb);
 		if (r < 0) {
-			//LOG_ERR("Could not set gpio callback");
+			printk("Could not set gpio callback\n");
 			return false;
 		}
 
+		if (tdbgPin) {
+			  gpio_pin_configure_dt(tdbgPin, GPIO_OUTPUT_LOW | GPIO_ACTIVE_HIGH);
+  			digitalWrite(tdbgPin, HIGH);
+		}
 
 		isrPinptr = this;
 	}
@@ -82,10 +88,14 @@ bool XPT2046_Touchscreen::begin()
 
 
 
-static void xpt2046_isr_handler(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+void XPT2046_Touchscreen::xpt2046_isr_handler(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
+	if (XPT2046_Touchscreen::tdbgPin) digitalWrite(XPT2046_Touchscreen::tdbgPin, LOW);
+
 	XPT2046_Touchscreen *o = isrPinptr;
 	o->isrWake = true;
+	gpio_remove_callback(o->tirqPin->port, &o->int_gpio_cb);
+	//printk("$");
 }
 
 TS_Point XPT2046_Touchscreen::getPoint()
@@ -132,52 +142,6 @@ static int16_t besttwoavg( int16_t x , int16_t y , int16_t z ) {
   return (reta);
 }
 
-// TODO: perhaps a future version should offer an option for more oversampling,
-//       with the RANSAC algorithm https://en.wikipedia.org/wiki/RANSAC
-uint8_t XPT2046_Touchscreen::transfer(uint8_t data) {
-  int ret;
-  uint8_t rx;
-  const struct spi_buf tx_buf = {.buf = &data, .len = sizeof(data)};
-  const struct spi_buf_set tx_buf_set = {
-      .buffers = &tx_buf,
-      .count = 1,
-  };
-  const struct spi_buf rx_buf = {.buf = &rx, .len = sizeof(rx)};
-  const struct spi_buf_set rx_buf_set = {
-      .buffers = &rx_buf,
-      .count = 1,
-  };
-
-  ret = spi_transceive(_pspi->bus, &_config, &tx_buf_set, &rx_buf_set);
-  if (ret < 0) {
-    return 0;
-  }
-
-  return rx;
-}
-
-uint16_t XPT2046_Touchscreen::transfer16(uint16_t data) {
-  int ret;
-  uint16_t rx;
-  const struct spi_buf tx_buf = {.buf = &data, .len = sizeof(data)};
-  const struct spi_buf_set tx_buf_set = {
-      .buffers = &tx_buf,
-      .count = 1,
-  };
-  const struct spi_buf rx_buf = {.buf = &rx, .len = sizeof(rx)};
-  const struct spi_buf_set rx_buf_set = {
-      .buffers = &rx_buf,
-      .count = 1,
-  };
-
-  ret = spi_transceive(_pspi->bus, &_config16, &tx_buf_set, &rx_buf_set);
-  if (ret < 0) {
-    return 0;
-  }
-
-  return rx;
-}
-
 
 
 void XPT2046_Touchscreen::update()
@@ -188,7 +152,6 @@ void XPT2046_Touchscreen::update()
 	uint32_t now = millis();
 	if (now - msraw < MSEC_THRESHOLD) return;
 
-#if 1
 	// lets try doing the first part with one transfer
 	static const uint8_t upd_tx1[] = {0xB1, 0, 0xC1, 0, 0x91};
 	uint8_t rx[10];
@@ -225,40 +188,17 @@ void XPT2046_Touchscreen::update()
 	data[5] = (int16_t)(((rx[2] << 8)	| rx[3]) >> 3);
 
 
-#else	
-	if (_pspi) {
-//		_pspi->beginTransaction(SPI_SETTING);
-//		digitalWrite(csPin, LOW);
-		transfer(0xB1 /* Z1 */);
-		int16_t z1 = transfer16(0xC1 /* Z2 */) >> 3;
-		z = z1 + 4095;
-		int16_t z2 = transfer16(0x91 /* X */) >> 3;
-		z -= z2;
-		if (z >= Z_THRESHOLD) {
-			transfer16(0x91 /* X */);  // dummy X measure, 1st is always noisy
-			data[0] = transfer16(0xD1 /* Y */) >> 3;
-			data[1] = transfer16(0x91 /* X */) >> 3; // make 3 x-y measurements
-			data[2] = transfer16(0xD1 /* Y */) >> 3;
-			data[3] = transfer16(0x91 /* X */) >> 3;
-		}
-		else data[0] = data[1] = data[2] = data[3] = 0;	// Compiler warns these values may be used unset on early exit.
-		data[4] = transfer16(0xD0 /* Y */) >> 3;	// Last Y touch power down
-		data[5] = transfer16(0) >> 3;
-//		digitalWrite(csPin, HIGH);
-		//_pspi->endTransaction();
-	}	
-	// If we do not have either _pspi or _pflexspi than bail. 
-	else return;
-#endif
-
 	//Serial.printf("z=%d  ::  z1=%d,  z2=%d  ", z, z1, z2);
 	if (z < 0) z = 0;
 	if (z < Z_THRESHOLD) { //	if ( !touched ) {
 		// Serial.println();
 		zraw = 0;
-		if (z < Z_THRESHOLD_INT) { //	if ( !touched ) {
+		//if (z < Z_THRESHOLD_INT) { //	if ( !touched ) {
 			if (tirqPin) isrWake = false;
-		}
+			gpio_add_callback(tirqPin->port, &int_gpio_cb);
+		if (XPT2046_Touchscreen::tdbgPin) digitalWrite(XPT2046_Touchscreen::tdbgPin, HIGH);
+
+		//}
 		return;
 	}
 	zraw = z;

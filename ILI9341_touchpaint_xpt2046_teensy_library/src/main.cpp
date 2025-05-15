@@ -93,7 +93,7 @@ ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pi
 static const struct gpio_dt_spec xpt2046_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), xpt2046_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
-XPT2046_Touchscreen ts(&xpt2046_spi, &xpt2046_pins[0], nullptr);
+XPT2046_Touchscreen ts(&xpt2046_spi, &xpt2046_pins[0],  &xpt2046_pins[1]);
 
 
 //=================================================================
@@ -160,6 +160,7 @@ long map(T _x, A _in_min, B _in_max, C _out_min, D _out_max, typename std::enabl
 	// https://forum.pjrc.com/threads/44503-map()-function-improvements
 }
 // map() transforms input "x" from one numerical range to another.  For example, if
+extern void WaitForUserInput(uint32_t timeout);
 
 
 
@@ -208,6 +209,35 @@ int main(void)
 	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_WHITE);
 
+	uint32_t radius = min(tft.width(), tft.height()) / 2;
+
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_RED);
+	radius -= 20;
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_YELLOW);
+	radius -= 20;
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_GREEN);
+	radius -= 20;
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_CYAN);
+	radius -= 20;
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_BLUE);
+	radius -= 20;
+	tft.fillCircle(tft.width()/2, tft.height()/2, radius, ILI9341_MAGENTA);
+	tft.fillCircle(tft.width()/2, tft.height()/2, 3, ILI9341_WHITE);
+
+	WaitForUserInput(1000);
+	tft.fillScreen(ILI9341_BLACK);
+	uint32_t t0 = micros();
+	tft.fillRectHGradient(10, 10, 100, 100, tft.color565(0 << 3, 0, 0), tft.color565(9 << 3, 0, 0));
+	uint32_t t1 = micros();
+	tft.fillRectHGradient(130, 10, 100, 100, ILI9341_YELLOW, ILI9341_GREEN);
+	uint32_t t2 = micros();
+	tft.fillRectVGradient(10, 130, 100, 100, tft.color565(0, 0, 0 << 3), tft.color565(0, 0, 9 << 3));
+	uint32_t t3 = micros();
+	tft.fillRectVGradient(130, 130, 100, 100, ILI9341_CYAN, ILI9341_BLUE);
+	uint32_t t4 = micros();
+	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
+	WaitForUserInput(2000);
+
 
   tft.fillScreen(ILI9341_BLACK);
   tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
@@ -229,67 +259,71 @@ int main(void)
 	  	TS_Point p = ts.getPoint();
 
 	  	// p is in ILI9341_t3 setOrientation 1 settings. so we need to map x and y differently.
-      	USBSerial.printf("TOUCH (%d, %d, %d)", p.x, p.y, p.z);      
-        // Scale from ~0->4000 to tft.width using the calibration #'s
-		#ifdef SCREEN_ORIENTATION_1
-		  p.x = map(p.x, TS_MINX, TS_MAXX, 0, tft.width());
-		  p.y = map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
-		#else
-		  
-		  uint16_t px = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());
-		  p.y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height());
-		  p.x = px;
-		#endif
-		  USBSerial.printf(" (%d %d)\n", p.x, p.y );
-		  if (p.y < BOXSIZE) {
-		    oldcolor = currentcolor;
+      	if (ts.touched()) {
+      		USBSerial.printf("TOUCH (%d, %d, %d)", p.x, p.y, p.z);      
+	        // Scale from ~0->4000 to tft.width using the calibration #'s
+			#ifdef SCREEN_ORIENTATION_1
+			  p.x = map(p.x, TS_MINX, TS_MAXX, 0, tft.width());
+			  p.y = map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
+			#else
+			  
+			  uint16_t px = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());
+			  p.y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height());
+			  p.x = px;
+			#endif
+			  USBSerial.printf(" (%d %d)\n", p.x, p.y );
+			  if (p.y < BOXSIZE) {
+			    oldcolor = currentcolor;
 
-		    if (p.x < BOXSIZE) {
-		      currentcolor = ILI9341_RED;
-		      tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    } else if (p.x < BOXSIZE * 2) {
-		      currentcolor = ILI9341_YELLOW;
-		      tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    } else if (p.x < BOXSIZE * 3) {
-		      currentcolor = ILI9341_GREEN;
-		      tft.drawRect(BOXSIZE * 2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    } else if (p.x < BOXSIZE * 4) {
-		      currentcolor = ILI9341_CYAN;
-		      tft.drawRect(BOXSIZE * 3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    } else if (p.x < BOXSIZE * 5) {
-		      currentcolor = ILI9341_BLUE;
-		      tft.drawRect(BOXSIZE * 4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    } else if (p.x < BOXSIZE * 6) {
-		      currentcolor = ILI9341_MAGENTA;
-		      tft.drawRect(BOXSIZE * 5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-		    }
-		   if (oldcolor != currentcolor) {
-		      if (oldcolor == ILI9341_RED)
-		        tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-		      if (oldcolor == ILI9341_YELLOW)
-		        tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-		      if (oldcolor == ILI9341_GREEN)
-		        tft.fillRect(BOXSIZE * 2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-		      if (oldcolor == ILI9341_CYAN)
-		        tft.fillRect(BOXSIZE * 3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-		      if (oldcolor == ILI9341_BLUE)
-		        tft.fillRect(BOXSIZE * 4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-		      if (oldcolor == ILI9341_MAGENTA)
-		        tft.fillRect(BOXSIZE * 5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
-		    }
-		  }
-		   if (((p.y - PENRADIUS) > BOXSIZE) && ((p.y + PENRADIUS) < tft.height())) {
-		    tft.fillCircle(p.x, p.y, PENRADIUS, currentcolor);
-		  }
+			    if (p.x < BOXSIZE) {
+			      currentcolor = ILI9341_RED;
+			      tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    } else if (p.x < BOXSIZE * 2) {
+			      currentcolor = ILI9341_YELLOW;
+			      tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    } else if (p.x < BOXSIZE * 3) {
+			      currentcolor = ILI9341_GREEN;
+			      tft.drawRect(BOXSIZE * 2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    } else if (p.x < BOXSIZE * 4) {
+			      currentcolor = ILI9341_CYAN;
+			      tft.drawRect(BOXSIZE * 3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    } else if (p.x < BOXSIZE * 5) {
+			      currentcolor = ILI9341_BLUE;
+			      tft.drawRect(BOXSIZE * 4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    } else if (p.x < BOXSIZE * 6) {
+			      currentcolor = ILI9341_MAGENTA;
+			      tft.drawRect(BOXSIZE * 5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+			    }
+			   if (oldcolor != currentcolor) {
+			      if (oldcolor == ILI9341_RED)
+			        tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
+			      if (oldcolor == ILI9341_YELLOW)
+			        tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
+			      if (oldcolor == ILI9341_GREEN)
+			        tft.fillRect(BOXSIZE * 2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
+			      if (oldcolor == ILI9341_CYAN)
+			        tft.fillRect(BOXSIZE * 3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
+			      if (oldcolor == ILI9341_BLUE)
+			        tft.fillRect(BOXSIZE * 4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
+			      if (oldcolor == ILI9341_MAGENTA)
+			        tft.fillRect(BOXSIZE * 5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+			    }
+			  }
+			   if (((p.y - PENRADIUS) > BOXSIZE) && ((p.y + PENRADIUS) < tft.height())) {
+			    tft.fillCircle(p.x, p.y, PENRADIUS, currentcolor);
+			  }
 
-  		}
+	  		}
+	  	}
 	return 0;
 }
 
+extern unsigned long millis(void);
 
-void WaitForUserInput() {
+void WaitForUserInput(uint32_t timeout) {
     USBSerial.print("Hit key to continue\n");
-    while (USBSerial.read() == -1) ;
+    uint32_t time_start = millis();
+    while ((USBSerial.read() == -1) && ((uint32_t)(millis() - time_start)  < timeout)) ;
     while (USBSerial.read() != -1) ;
     USBSerial.print("Done!\n");
 }

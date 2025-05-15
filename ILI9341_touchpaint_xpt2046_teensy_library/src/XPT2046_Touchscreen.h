@@ -44,9 +44,11 @@ public:
 
 class XPT2046_Touchscreen {
 public:
-  XPT2046_Touchscreen(struct spi_dt_spec * pspi, const struct gpio_dt_spec *cspin, 
-  	const struct gpio_dt_spec *tirq=nullptr)  
-		: _pspi(pspi), csPin(cspin), tirqPin(tirq) { }
+  XPT2046_Touchscreen(struct spi_dt_spec * pspi,  
+  	const struct gpio_dt_spec *tirq=nullptr, const struct gpio_dt_spec *tdbg=nullptr)  
+		: _pspi(pspi), tirqPin(tirq) {  
+			tdbgPin = (struct gpio_dt_spec *)tdbg;
+		}
 	bool begin();
 
 	TS_Point getPoint();
@@ -58,17 +60,17 @@ public:
 	void setRotation(uint8_t n) { rotation = n % 4; }
 // protected:
 	volatile bool isrWake=true;
+	static const struct gpio_dt_spec *tdbgPin;
 
 private:
 	void update();
-	uint8_t transfer(uint8_t data);
-	uint16_t transfer16(uint16_t data);
+	static void xpt2046_isr_handler(const struct device *dev, struct gpio_callback *cb, uint32_t pins);
 
   struct spi_dt_spec *  _pspi;
   struct spi_config _config, _config16;
 	struct gpio_callback int_gpio_cb;
 
-	const struct gpio_dt_spec * csPin, *tirqPin;
+	const struct gpio_dt_spec *tirqPin;
 	uint8_t rotation=1;
 	int16_t xraw=0, yraw=0, zraw=0;
 	uint32_t msraw=0x80000000;

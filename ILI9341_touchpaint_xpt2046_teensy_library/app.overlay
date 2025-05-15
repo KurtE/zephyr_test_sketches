@@ -32,8 +32,8 @@
 						<&gpio3 22 GPIO_ACTIVE_HIGH>,	/* RST Pin 31 */
 						<&gpio1 31 GPIO_ACTIVE_LOW>;	/* touch cs Pin 27 */
 
-		xpt2046-gpios = <&gpio1 30 GPIO_ACTIVE_LOW>, <&gpio1 31 GPIO_ACTIVE_HIGH>;
-
+		xpt2046-gpios = <&gpio1 31 GPIO_ACTIVE_HIGH>,
+				<&gpio2 10 GPIO_ACTIVE_HIGH>;  // debug pin D6
 	};
 	
 	chosen {
