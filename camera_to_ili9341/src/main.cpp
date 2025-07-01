@@ -36,6 +36,8 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 #include <zephyr/drivers/video.h>
 #include <zephyr/drivers/video-controls.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/multi_heap/shared_multi_heap.h>
 
 
 #if !defined(CONFIG_BOARD_ARDUINO_PORTENTA_H7)
@@ -175,6 +177,30 @@ int camera_ext_clock_enable(void)
 	return 0;
 }
 
+extern "C" {
+__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+
+int smh_init(void) {
+    int ret = 0;
+    ret = shared_multi_heap_pool_init();
+    if (ret != 0) {
+        return ret;
+    }
+
+    struct shared_multi_heap_region smh_sdram = {
+        .attr = SMH_REG_ATTR_EXTERNAL,
+        .addr = (uintptr_t) smh_pool,
+        .size = sizeof(smh_pool)
+    };
+
+    ret = shared_multi_heap_add(&smh_sdram, NULL);
+    if (ret != 0) {
+        return ret;
+    }
+	return 0;
+}
+} // extern c
+
 
 
 
@@ -229,6 +255,11 @@ int main(void)
 	if (ret) {
 		printk("    Failed: %d\n", ret);
 	}
+
+	
+	printk("Start Shared memory heap");
+	smh_init();
+
 
 	// lets get camera information
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
@@ -287,10 +318,11 @@ int main(void)
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
-	printk("Initialze video buffer list\n");
+	printk("Initialze video buffer list (%u)\n",  ARRAY_SIZE(buffers));
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
+		printk("  %d:%x\n", i, buffers[i]);
 		if (buffers[i] == NULL) {
 			printk("ERROR: Unable to alloc video buffer\n") ;
 			return 0;
@@ -320,7 +352,25 @@ int main(void)
 
 	printk("Starting main loop\n");
     for (;;) {
-  		k_sleep(K_MSEC(100));
+		int err;
+		uint32_t start_time = micros();
+		err = video_dequeue(video_dev, &vbuf, K_FOREVER);
+		printk("Dequeue: %u\n", micros() - start_time);
+		if (err) {
+			printk("ERROR: Unable to dequeue video buf\n");
+	  		k_sleep(K_MSEC(1000));
+	  		continue;
+		}
+		start_time = micros();
+		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
+		printk("writeRect: %u\n", micros() - start_time);
+
+		err = video_enqueue(video_dev, vbuf);
+		if (err) {
+			printk("ERROR: Unable to requeue video buf\n");
+			continue;
+		}
+
   	}
 	return 0;
 }
