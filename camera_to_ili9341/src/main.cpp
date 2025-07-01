@@ -20,6 +20,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/drivers/clock_control.h>
 
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/usbd.h>
@@ -93,14 +94,6 @@ ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pi
 
 //=================================================================
 // forward references of functions
-#define BOXSIZE 40
-#define PENRADIUS 3
-int oldcolor, currentcolor;
-
-#define TS_MINX 337
-#define TS_MINY 529
-#define TS_MAXX 3729
-#define TS_MAXY 3711
 
 // from teensy cores (map)
 #include <type_traits>
@@ -158,6 +151,32 @@ long map(T _x, A _in_min, B _in_max, C _out_min, D _out_max, typename std::enabl
 extern void WaitForUserInput(uint32_t timeout);
 
 
+int camera_ext_clock_enable(void)
+{
+	int ret;
+	uint32_t rate;
+
+	const struct device *cam_ext_clk_dev = DEVICE_DT_GET(DT_NODELABEL(pwmclock));
+
+	if (!device_is_ready(cam_ext_clk_dev)) {
+		return -ENODEV;
+	}
+
+	ret = clock_control_on(cam_ext_clk_dev, (clock_control_subsys_t)0);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = clock_control_get_rate(cam_ext_clk_dev, (clock_control_subsys_t)0, &rate);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return 0;
+}
+
+
+
 
 int main(void)
 {
@@ -203,6 +222,13 @@ int main(void)
 	uint32_t t4 = micros();
 	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
 	WaitForUserInput(2000);
+
+	// lets try to start the camera clock
+	printk("Starting camera clock\n");
+	ret = camera_ext_clock_enable();
+	if (ret) {
+		printk("    Failed: %d\n", ret);
+	}
 
 	// lets get camera information
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
@@ -261,6 +287,7 @@ int main(void)
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
+	printk("Initialze video buffer list\n");
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
@@ -285,12 +312,13 @@ int main(void)
 	}
 
 	/* Start video capture */
+	printk("Starting  capture\n");
 	if (video_stream_start(video_dev, type)) {
 		printk("ERROR: Unable to start capture (interface)\n") ;
 		return 0;
 	}
 
-
+	printk("Starting main loop\n");
     for (;;) {
   		k_sleep(K_MSEC(100));
   	}
