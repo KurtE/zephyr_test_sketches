@@ -163,9 +163,9 @@ void XPT2046_Touchscreen::update()
 
   spi_transceive_dt(_pspi, &tx_buf_set, &rx_buf_set);
 
-	int16_t z1 = (int16_t)(((rx[1] << 8)	| rx[2]) >> 3);
+	int16_t z1 = (int16_t)(((rx[1] << 5)	| rx[2]) >> 3);
 	z = z1 + 4095;
-	int16_t z2 = (int16_t)(((rx[3] << 8)	| rx[4]) >> 3);
+	int16_t z2 = (int16_t)(((rx[3] << 5)	| rx[4]) >> 3);
 	z -= z2;
 	if (z >= Z_THRESHOLD) {
 		static const uint8_t upd_tx2[] = { 0, 0x91, 0, 0xD1, 0, 0x91, 0, 0xD1, 0, 0x91};
@@ -173,10 +173,10 @@ void XPT2046_Touchscreen::update()
 		rx_buf.len = tx_buf.len = sizeof(upd_tx2);
   	spi_transceive_dt(_pspi, &tx_buf_set, &rx_buf_set);
   	// first number noisy...
-		data[0] = (int16_t)(((rx[2] << 8)	| rx[3]) >> 3);
-		data[1] = (int16_t)(((rx[4] << 8)	| rx[5]) >> 3);
-		data[2] = (int16_t)(((rx[6] << 8)	| rx[7]) >> 3);
-		data[3] = (int16_t)(((rx[8] << 8)	| rx[9]) >> 3);
+		data[0] = (int16_t)(((rx[2] << 5)	| rx[3]) >> 3);
+		data[1] = (int16_t)(((rx[4] << 5)	| rx[5]) >> 3);
+		data[2] = (int16_t)(((rx[6] << 5)	| rx[7]) >> 3);
+		data[3] = (int16_t)(((rx[8] << 5)	| rx[9]) >> 3);
 	}
 	else data[0] = data[1] = data[2] = data[3] = 0;	// Compiler warns these values may be used unset on early exit.
 
@@ -184,8 +184,8 @@ void XPT2046_Touchscreen::update()
 	tx_buf.buf = (void*)upd_tx3;
 	rx_buf.len = tx_buf.len = sizeof(upd_tx3);
 	spi_transceive_dt(_pspi, &tx_buf_set, &rx_buf_set);
-	data[4] = (int16_t)(((rx[0] << 8)	| rx[1]) >> 3);
-	data[5] = (int16_t)(((rx[2] << 8)	| rx[3]) >> 3);
+	data[4] = (int16_t)(((rx[0] << 5)	| rx[1]) >> 3);
+	data[5] = (int16_t)(((rx[2] << 5)	| rx[3]) >> 3);
 
 
 	//Serial.printf("z=%d  ::  z1=%d,  z2=%d  ", z, z1, z2);

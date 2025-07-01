@@ -99,7 +99,7 @@ static struct {
 
 static void touch_event_callback(struct input_event *evt, void *user_data)
 {
-  printk("TECB: %u %u %u\n", evt->code, evt->value, evt->sync);
+  //printk("TECB: %u %u %u\n", evt->code, evt->value, evt->sync);
   if (evt->code == INPUT_ABS_X) {
     touch_point.x = evt->value;
   }
@@ -156,7 +156,7 @@ int main(void)
 
 	tft.setDebugUART(&USBSerial);
 	tft.begin();
-	tft.setRotation(1);
+	tft.setRotation(0);
 
 	tft.fillScreen(ILI9341_BLACK);
 	k_sleep(K_MSEC(500));

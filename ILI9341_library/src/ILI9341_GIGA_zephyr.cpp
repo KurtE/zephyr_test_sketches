@@ -52,7 +52,13 @@
 // <\SoftEgg>
 
 #include "ILI9341_GIGA_zephyr.h"
+#include <cstdlib>
 //#include <api/itoa.h>
+#include <math.h>
+
+#if defined(CONFIG_BOARD_ARDUINO_PORTENTA_H7)
+#define abs fabs
+#endif
 
 
 #define WIDTH ILI9341_TFTWIDTH
@@ -398,6 +404,44 @@ void ILI9341_GIGA_n::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
   // printf("\tfillRect - end\n");
 }
 
+#define CONVERSION_TYPE 0
+#if CONVERSION_TYPE == 0
+#define SUMTYPE int32_t
+inline SUMTYPE convertColorDiffToSumType(int16_t c1, uint16_t c2, int16_t steps) {
+  return (SUMTYPE)((uint32_t)((c2 - c1) * 32768)) / steps;
+}
+inline SUMTYPE convertColorToSumType(int16_t c) { return c * 32768;} 
+
+inline int16_t convertSumTypeToColor(SUMTYPE val) {return val/32768;}
+
+#elif CONVERSION_TYPE == 1
+#define SUMTYPE int16_t
+inline SUMTYPE convertColorDiffToSumType(int16_t c1, uint16_t c2, int16_t steps) {
+  return (c2 - c1) / steps;
+}
+inline SUMTYPE convertColorToSumType(int16_t c) { return c;} 
+
+inline int16_t convertSumTypeToColor(SUMTYPE val) {return val;}
+
+#elif CONVERSION_TYPE == 2
+#define SUMTYPE float
+inline SUMTYPE convertColorDiffToSumType(int16_t c1, uint16_t c2, int16_t steps) {
+  return float(c2 - c1) / steps;
+}
+inline SUMTYPE convertColorToSumType(int16_t c) { return (float)c;} 
+inline int16_t convertSumTypeToColor(SUMTYPE val) {return round(val);}
+
+#elif CONVERSION_TYPE == 3
+#define SUMTYPE double
+inline SUMTYPE convertColorDiffToSumType(int16_t c1, uint16_t c2, int16_t steps) {
+  return double(c2 - c1) / steps;
+}
+inline SUMTYPE convertColorToSumType(int16_t c) { return (double)c;} 
+inline int16_t convertSumTypeToColor(SUMTYPE val) {return round(val);}
+
+#endif
+
+
 // fillRectVGradient	- fills area with vertical gradient
 void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t h,
                                     uint16_t color1, uint16_t color2) {
@@ -420,15 +464,16 @@ void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t 
   if ((y + h - 1) >= _displayclipy2)
     h = _displayclipy2 - y;
 
-  int16_t r1, g1, b1, r2, g2, b2, dr, dg, db, r, g, b;
+  int16_t r1, g1, b1, r2, g2, b2;
+  SUMTYPE dr, dg, db, r, g, b;
   color565toRGB14(color1, r1, g1, b1);
   color565toRGB14(color2, r2, g2, b2);
-  dr = (r2 - r1) / h;
-  dg = (g2 - g1) / h;
-  db = (b2 - b1) / h;
-  r = r1;
-  g = g1;
-  b = b1;
+  dr = convertColorDiffToSumType(r2, r1, h);
+  dg = convertColorDiffToSumType(g2, g1, h);
+  db = convertColorDiffToSumType(b2, b1, h);
+  r = convertColorToSumType(r1);
+  g = convertColorToSumType(g1);
+  b = convertColorToSumType(b1);
 
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
   if (_use_fbtft) {
@@ -437,7 +482,7 @@ void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t 
     if ((x & 1) || (w & 1)) {
       uint16_t *pfbPixel_row = &_pfbtft[y * _width + x];
       for (; h > 0; h--) {
-        uint16_t color = RGB14tocolor565(r, g, b);
+        uint16_t color = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
         uint16_t *pfbPixel = pfbPixel_row;
         for (int i = 0; i < w; i++) {
           *pfbPixel++ = color;
@@ -454,7 +499,7 @@ void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t 
       w = w / 2; // only iterate half the times
       for (; h > 0; h--) {
         uint32_t *pfbPixel = pfbPixel_row;
-        uint16_t color = RGB14tocolor565(r, g, b);
+        uint16_t color = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
         uint32_t color32 = (color << 16) | color;
         for (int i = 0; i < w; i++) {
           *pfbPixel++ = color32;
@@ -472,7 +517,7 @@ void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t 
     setAddr(x, y, x + w - 1, y + h - 1);
     writecommand_cont(ILI9341_RAMWR);
     for (y = h; y > 0; y--) {
-      uint16_t color = RGB14tocolor565(r, g, b);
+      uint16_t color = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
 
       for (x = w; x > 1; x--) {
         writedata16_cont(color);
@@ -491,6 +536,7 @@ void ILI9341_GIGA_n::fillRectVGradient(int16_t x, int16_t y, int16_t w, int16_t 
 }
 
 // fillRectHGradient	- fills area with horizontal gradient
+
 void ILI9341_GIGA_n::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t h,
                                     uint16_t color1, uint16_t color2) {
   x += _originx;
@@ -512,16 +558,17 @@ void ILI9341_GIGA_n::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t 
   if ((y + h - 1) >= _displayclipy2)
     h = _displayclipy2 - y;
 
-  int16_t r1, g1, b1, r2, g2, b2, dr, dg, db, r, g, b;
+  int16_t r1, g1, b1, r2, g2, b2;
+  SUMTYPE dr, dg, db, r, g, b;
   uint16_t color;
   color565toRGB14(color1, r1, g1, b1);
   color565toRGB14(color2, r2, g2, b2);
-  dr = (r2 - r1) / w;
-  dg = (g2 - g1) / w;
-  db = (b2 - b1) / w;
-  r = r1;
-  g = g1;
-  b = b1;
+  dr = convertColorDiffToSumType(r2, r1, w);
+  dg = convertColorDiffToSumType(g2, g1, w);
+  db = convertColorDiffToSumType(b2, b1, w);
+  r = convertColorToSumType(r1);
+  g = convertColorToSumType(g1);
+  b = convertColorToSumType(b1);
 #ifdef ENABLE_ILI9341_FRAMEBUFFER
   if (_use_fbtft) {
     updateChangedRange(
@@ -530,15 +577,15 @@ void ILI9341_GIGA_n::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t 
     for (; h > 0; h--) {
       uint16_t *pfbPixel = pfbPixel_row;
       for (int i = 0; i < w; i++) {
-        *pfbPixel++ = RGB14tocolor565(r, g, b);
+        *pfbPixel++ = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
         r += dr;
         g += dg;
         b += db;
       }
       pfbPixel_row += _width;
-      r = r1;
-      g = g1;
-      b = b1;
+      r = convertColorToSumType(r1);
+      g = convertColorToSumType(g1);
+      b = convertColorToSumType(b1);
     }
   } else
 #endif
@@ -548,21 +595,21 @@ void ILI9341_GIGA_n::fillRectHGradient(int16_t x, int16_t y, int16_t w, int16_t 
     writecommand_cont(ILI9341_RAMWR);
     for (y = h; y > 0; y--) {
       for (x = w; x > 1; x--) {
-        color = RGB14tocolor565(r, g, b);
+        color = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
         writedata16_cont(color);
         r += dr;
         g += dg;
         b += db;
       }
-      color = RGB14tocolor565(r, g, b);
+      color = RGB14tocolor565(convertSumTypeToColor(r), convertSumTypeToColor(g), convertSumTypeToColor(b));
       writedata16_last(color);
       if (y > 1 && (y & 1)) {
         endSPITransaction();
         beginSPITransaction(_SPI_CLOCK);
       }
-      r = r1;
-      g = g1;
-      b = b1;
+      r = convertColorToSumType(r1);
+      g = convertColorToSumType(g1);
+      b = convertColorToSumType(b1);
     }
     endSPITransaction();
   }
@@ -3862,7 +3909,7 @@ uint8_t ILI9341_GIGA_n::useFrameBuffer(
     // First see if we need to allocate buffer
     if (_pfbtft == NULL) {
       // Hack to start frame buffer on 32 byte boundary
-      _we_allocated_buffer = (uint16_t *)malloc(CBALLOC + 32);
+      _we_allocated_buffer = (uint16_t *)(CBALLOC + 32);
       if (_we_allocated_buffer == NULL)
         return 0; // failed
       _pfbtft = (uint16_t *)(((uintptr_t)_we_allocated_buffer + 32) &
@@ -3994,7 +4041,7 @@ bool ILI9341_GIGA_n::updateScreenAsync(bool update_cont) {
     _async_update_active = true;
     struct spi_buf tx_buf = { .buf = _pfbtft, .len = ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT * 2 };
     const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
-    spi_transceive_cb(_spi_dev, &_config16, &tx_buf_set, nullptr, &async_callback, this);
+    spi_transceive_cb(_spi_dev->bus, &_config16, &tx_buf_set, nullptr, &async_callback, this);
   }
   #endif
   #else

@@ -1,0 +1,187 @@
+/* This is copy of the Arduino setup */
+&board_cdc_acm_uart {
+	status = "okay";
+};
+
+&usart1 {
+	status = "okay";
+};
+
+&uart4 {
+	status = "okay";
+};
+
+&usart6 {
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+
+	gc2145: gc2145@3c {
+		compatible = "galaxycore,gc2145";
+		reg = <0x3c>;
+		status = "okay";
+
+		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
+
+		port {
+			gc2145_ep_out: endpoint {
+				remote-endpoint-label = "dcmi_ep_in";
+			};
+		};
+	};
+
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+};
+
+&spi2 {
+	status = "okay";
+	pinctrl-0 = <&spi2_sck_pi1
+		     &spi2_miso_pc2 &spi2_mosi_pc3>;
+	pinctrl-names = "default";
+	/* added for sketch */
+	ili9341_spi_dev: ili9341_spi_dev@0 {
+		status = "okay";
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+	};
+
+};
+
+&timers1 {
+	status = "okay";
+	st,prescaler = <0>;
+
+	pwm1: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim1_ch1_pa8 &tim1_ch2_pj11>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers3 {
+	status = "okay";
+	st,prescaler = <100>;
+
+	pwm3: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim3_ch1_pc6 &tim3_ch2_pc7>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers8 {
+	status = "okay";
+	st,prescaler = <100>;
+
+	pwm8: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim8_ch3n_ph15 &tim8_ch2_pj10 &tim8_ch2n_pj7>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers12 {
+	status = "okay";
+	st,prescaler = <100>;
+
+	pwm12: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim12_ch1_ph6>;
+		pinctrl-names = "default";
+	};
+};
+
+&pwm1 {
+	/* Camera source clock */
+	pwmclock: pwmclock {
+		status = "okay";
+		compatible = "pwm-clock";
+		clock-frequency = <0>;
+		#clock-cells = <1>;
+		pwms = <&pwm1 1 PWM_HZ(12000000) PWM_POLARITY_NORMAL>;
+		/* 12MHz for 7670, default is also 12MHz */
+	};
+};
+
+&rng {
+	status = "okay";
+};
+
+&dmamux1 {
+	status = "okay";
+};
+
+&dma1 {
+	status = "okay";
+};
+
+&dcmi {
+	status = "okay";
+	/* ext-sdram = <&sdram1>; */
+	pinctrl-0 = <&dcmi_hsync_pa4 &dcmi_pixclk_pa6 &dcmi_vsync_pi5
+		     &dcmi_d0_ph9 &dcmi_d1_ph10 &dcmi_d2_ph11 &dcmi_d3_ph12
+		     &dcmi_d4_ph14 &dcmi_d5_pi4 &dcmi_d6_pi6 &dcmi_d7_pi7>;
+	pinctrl-names = "default";
+	dmas = <&dma1 0 75 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PERIPH_NO_INC |
+			    STM32_DMA_MEM_INC | STM32_DMA_PERIPH_32BITS | STM32_DMA_MEM_32BITS |
+			    STM32_DMA_PRIORITY_HIGH) STM32_DMA_FIFO_1_4>; //FULL for 7670, default FIFO_1_4
+
+	port {
+		dcmi_ep_in: endpoint {
+			remote-endpoint-label = "gc2145_ep_out";
+			bus-width = <8>;
+			hsync-active = <0>;
+			vsync-active = <0>;
+			pclk-sample = <0>;
+		};
+	};
+};
+
+
+/ {
+	chosen {
+		zephyr,camera = &dcmi;
+		zephyr,console = &usart6;
+		zephyr,shell-uart = &usart6;
+		zephyr,cdc-acm-uart0 = &usart6;
+	};
+
+};
+
+
+/ {
+	zephyr,user {
+		builtin-led-gpios = <&gpiok 5 0>,
+				    <&gpiok 6 0>,
+				    <&gpiok 7 0>;
+
+	};
+};
+
+/* This apps setup */
+/ {
+
+	zephyr,user {
+		ili9341-gpios = <&gpioj 11 GPIO_ACTIVE_HIGH>,	/* CS D2 */
+						<&gpioc 7 GPIO_ACTIVE_HIGH>,	/* DC D4 */
+						<&gpiog 7 GPIO_ACTIVE_HIGH>;	/* RST D3 */
+						/* <&gpio1 30 GPIO_ACTIVE_LOW>;	touch cs Pin 26 */
+
+	};
+	
+	chosen {
+
+
+	};
+};

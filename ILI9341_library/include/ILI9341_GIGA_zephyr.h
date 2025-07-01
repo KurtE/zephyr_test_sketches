@@ -529,8 +529,8 @@ public:
 //  void clearDMAInterruptStatus(uint8_t clear_flags);
 #endif
 
-  struct spi_dt_spec *  _pspi = nullptr;
-  struct spi_dt_spec *_spi_dev = nullptr;
+  const struct spi_dt_spec *  _pspi = nullptr;
+  const struct spi_dt_spec *_spi_dev = nullptr;
   struct spi_config _config, _config16;
 
   uint8_t _spi_num = 0;         // Which buss is this spi on?
