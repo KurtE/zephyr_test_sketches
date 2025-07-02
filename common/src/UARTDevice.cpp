@@ -36,7 +36,7 @@ void UARTDevice::flush() {
 }
 
 size_t UARTDevice::write(const uint8_t *buffer, size_t size) {
-	int idx = 0;
+	size_t idx = 0;
 
 	while (1) {
 		k_sem_take(&_tx_sem, K_FOREVER);
@@ -75,12 +75,63 @@ size_t UARTDevice::println() {
 	return write((const uint8_t*)"\n", 1);
 }
 
+size_t UARTDevice::print(char c) {return print((long)c); }
+size_t UARTDevice::print(unsigned char c, int f) {return print((unsigned long int)c, f);}
+size_t UARTDevice::print(int v, int f) {return print((long int)v, f);}
+size_t UARTDevice::print(unsigned int v, int f) {return print((unsigned long int)v, f);}
 
-
-size_t UARTDevice::println(unsigned long ul) {
+size_t UARTDevice::print(long v, int f) {
 	char buffer[10];
-	sprintf(buffer, "%lu\n");
+
+	switch(f) {
+	case 10:
+		sprintf(buffer, "%ld", v);
+		break;
+	case 16:
+		sprintf(buffer, "%lx", v);
+		break;
+	}
 	return write((const uint8_t*)buffer, strlen(buffer));
+}
+
+size_t UARTDevice::print(unsigned long v, int f) {
+	char buffer[10];
+
+	switch(f) {
+	case 10:
+		sprintf(buffer, "%lu", v);
+		break;
+	case 16:
+		sprintf(buffer, "%lx", v);
+		break;
+	}
+	return write((const uint8_t*)buffer, strlen(buffer));
+}
+
+size_t UARTDevice::print(long long v, int f) {
+	return print("(LL)");
+
+}
+size_t UARTDevice::print(unsigned long long v, int f) {
+	return print("(ULL)");
+}
+
+size_t UARTDevice::println(char c) {return println((long)c); }
+size_t UARTDevice::println(unsigned char c, int f) {return println((unsigned long int)c, f);}
+size_t UARTDevice::println(int v, int f) {return println((long int)v, f);}
+size_t UARTDevice::println(unsigned int v, int f) {return println((unsigned long int)v, f);}
+
+
+size_t UARTDevice::println(long v, int f) {
+	size_t ret = print(v, f);
+	return ret + println();
+
+}
+
+
+size_t UARTDevice::println(unsigned long ul, int f) {
+	size_t ret = print(ul, f);
+	return ret + println();
 }
 
 

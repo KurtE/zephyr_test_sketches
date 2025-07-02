@@ -7,6 +7,12 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
 
+#define DEC 10
+#define HEX 16
+#define OCT 8
+#define BIN 2
+
+
 class UARTDevice {
 public:
 	UARTDevice(const struct device *const uart) : _uart(uart) {
@@ -29,6 +35,27 @@ public:
 	size_t println();
 	size_t println(unsigned long ul); // total place holder
 	size_t printf(const char *format, ...);
+
+	// Add a subset of the arduino ones:
+    size_t print(char);
+    size_t print(unsigned char, int = DEC);
+    size_t print(int, int = DEC);
+    size_t print(unsigned int, int = DEC);
+    size_t print(long, int = DEC);
+    size_t print(unsigned long, int = DEC);
+    size_t print(long long, int = DEC);
+    size_t print(unsigned long long, int = DEC);
+
+    size_t println(char);
+    size_t println(unsigned char, int = DEC);
+    size_t println(int, int = DEC);
+    size_t println(unsigned int, int = DEC);
+    size_t println(long, int = DEC);
+    size_t println(unsigned long, int = DEC);
+    size_t println(long long, int = DEC);
+    size_t println(unsigned long long, int = DEC);
+
+
 	int available();
   	int availableForWrite();
 	int peek();

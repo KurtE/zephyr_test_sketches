@@ -151,7 +151,11 @@ long map(T _x, A _in_min, B _in_max, C _out_min, D _out_max, typename std::enabl
 }
 // map() transforms input "x" from one numerical range to another.  For example, if
 extern void WaitForUserInput(uint32_t timeout);
+extern void show_all_gpio_regs();
 
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+extern "C" {
 
 int camera_ext_clock_enable(void)
 {
@@ -177,7 +181,11 @@ int camera_ext_clock_enable(void)
 	return 0;
 }
 
-extern "C" {
+SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+
 __stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
 
 int smh_init(void) {
@@ -199,8 +207,13 @@ int smh_init(void) {
     }
 	return 0;
 }
+
+SYS_INIT(smh_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+
 } // extern c
 
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
 
 
 
@@ -208,7 +221,6 @@ int main(void)
 {
 	struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
 	struct video_buffer *vbuf = nullptr;
-	const struct device *display_dev;
 	const struct device *video_dev;
 	struct video_format fmt;
 	struct video_caps caps;
@@ -223,7 +235,7 @@ int main(void)
 	USBSerial.println("Camera capture...");
 	tft.setDebugUART(&USBSerial);
 	tft.begin();
-	tft.setRotation(0);
+	tft.setRotation(1);
 
 	tft.fillScreen(ILI9341_BLACK);
 	k_sleep(K_MSEC(500));
@@ -250,15 +262,15 @@ int main(void)
 	WaitForUserInput(2000);
 
 	// lets try to start the camera clock
-	printk("Starting camera clock\n");
-	ret = camera_ext_clock_enable();
-	if (ret) {
-		printk("    Failed: %d\n", ret);
-	}
+//	printk("Starting camera clock\n");
+//	ret = camera_ext_clock_enable();
+//	if (ret) {
+//		printk("    Failed: %d\n", ret);
+//	}
 
 	
-	printk("Start Shared memory heap");
-	smh_init();
+//	printk("Start Shared memory heap");
+//	smh_init();
 
 
 	// lets get camera information
@@ -322,7 +334,7 @@ int main(void)
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
-		printk("  %d:%x\n", i, buffers[i]);
+		printk("  %d:%x\n", i, (uint32_t)buffers[i]);
 		if (buffers[i] == NULL) {
 			printk("ERROR: Unable to alloc video buffer\n") ;
 			return 0;
@@ -350,20 +362,29 @@ int main(void)
 		return 0;
 	}
 
+	// show all registers
+//	show_all_gpio_regs();
+
 	printk("Starting main loop\n");
     for (;;) {
 		int err;
 		uint32_t start_time = micros();
-		err = video_dequeue(video_dev, &vbuf, K_FOREVER);
-		printk("Dequeue: %u\n", micros() - start_time);
+		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
+		printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
 			printk("ERROR: Unable to dequeue video buf\n");
 	  		k_sleep(K_MSEC(1000));
 	  		continue;
 		}
+		// We need to byte swap here...
+        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+        for (size_t i=0; i<CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT; i++) {
+            pixels[i] = __REVSH(pixels[i]);
+        }
+
 		start_time = micros();
 		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
-		printk("writeRect: %u\n", micros() - start_time);
+		printk("writeRect: %lu\n", micros() - start_time);
 
 		err = video_enqueue(video_dev, vbuf);
 		if (err) {
@@ -386,3 +407,80 @@ void WaitForUserInput(uint32_t timeout) {
     while (USBSerial.read() != -1) ;
     USBSerial.print("Done!\n");
 }
+
+void print_gpio_regs(const char *name, GPIO_TypeDef *port) {
+  //printk("GPIO%s(%p) %08X %08X %08x\n", name, port, port->MODER, port->AFR[0], port->AFR[1]);
+  USBSerial.print("GPIO");
+  USBSerial.print(name);
+  USBSerial.print(" ");
+  USBSerial.print(port->MODER, HEX);
+  USBSerial.print(" ");
+  USBSerial.print(port->AFR[0], HEX);
+  USBSerial.print(" ");
+  USBSerial.println(port->AFR[1], HEX);
+}
+
+void print_PinConfig(const char *name, GPIO_TypeDef *port, const char *regName) {
+  uint32_t reg = 0;
+  uint8_t numPins = 0;
+  uint8_t numBits = 0;
+  uint8_t hack = 0;
+  USBSerial.print("GPIO");
+  USBSerial.print(name);
+  USBSerial.print(" ");
+  if(strcmp(regName, "M") == 0) {
+    USBSerial.print("MODER: ");
+    numPins = 16;
+    numBits = 2;
+    hack = 0;
+    reg = port->MODER;
+  } else if(strcmp (regName , "AL") == 0) {
+    USBSerial.print("AFRL");
+    numPins = 8;
+    numBits = 4;
+    hack = 0;
+    reg = port->AFR[0];
+  } else {
+    USBSerial.print("AFRH");
+    numPins = 8;
+    numBits = 4;
+    hack = 1;
+    reg = port->AFR[1];
+  }
+
+
+  for(uint8_t i = 0; i < numPins; i++) {
+    unsigned  mask;
+    //mask = ((1 << numBits2Extract) << startBit)
+    mask = ((1 << numBits) - 1) << (i*numBits);
+    //extractedBits = (value & mask) >> startBit
+    uint8_t extractedBits = (reg & mask) >> (i*numBits);
+    USBSerial.print("("); USBSerial.print(i+(hack*8)); USBSerial.print(")"); 
+    USBSerial.print(extractedBits); USBSerial.print(", ");
+  }
+  USBSerial.println();
+}
+
+void show_all_gpio_regs() {
+  print_gpio_regs("A", (GPIO_TypeDef *)GPIOA_BASE);
+  print_PinConfig("A", (GPIO_TypeDef *)GPIOC_BASE, "M");
+  print_PinConfig("A", (GPIO_TypeDef *)GPIOC_BASE, "AL");
+  print_PinConfig("A", (GPIO_TypeDef *)GPIOC_BASE, "AH");
+
+  print_gpio_regs("B", (GPIO_TypeDef *)GPIOB_BASE);
+  print_gpio_regs("C", (GPIO_TypeDef *)GPIOC_BASE);
+  print_PinConfig("C", (GPIO_TypeDef *)GPIOC_BASE, "M");
+  print_PinConfig("C", (GPIO_TypeDef *)GPIOC_BASE, "AL");
+  print_PinConfig("C", (GPIO_TypeDef *)GPIOC_BASE, "AH");
+
+  print_gpio_regs("D", (GPIO_TypeDef *)GPIOD_BASE);
+  print_gpio_regs("E", (GPIO_TypeDef *)GPIOE_BASE);
+  print_gpio_regs("F", (GPIO_TypeDef *)GPIOF_BASE);
+  print_gpio_regs("G", (GPIO_TypeDef *)GPIOG_BASE);
+  print_gpio_regs("H", (GPIO_TypeDef *)GPIOH_BASE);
+  print_gpio_regs("I", (GPIO_TypeDef *)GPIOI_BASE);
+  print_gpio_regs("J", (GPIO_TypeDef *)GPIOJ_BASE);
+  print_gpio_regs("K", (GPIO_TypeDef *)GPIOK_BASE);
+}
+
+
