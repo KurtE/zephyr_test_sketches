@@ -1,0 +1,32 @@
+/ {
+	zephyr,user {
+		digital-pin-gpios = <&micromod_header 0 0>,
+						<&micromod_header 1 0>,
+						<&micromod_header 2 0>,
+						<&micromod_header 3 0>,
+						<&micromod_header 4 0>,
+						<&micromod_header 5 0>,
+						<&micromod_header 6 0>,
+						<&micromod_header 7 0>,
+						<&micromod_header 8 0>,
+						<&micromod_header 9 0>,
+						<&micromod_header 10 0>,
+						<&micromod_header 11 0>,
+						<&micromod_header 12 0>,
+						<&micromod_header 13 0>,
+						<&micromod_header 14 0>,
+						<&micromod_header 15 0>,
+						<&micromod_header 16 0>,
+						<&micromod_header 17 0>;
+	};						
+
+	chosen {
+		uart,passthrough = &lpuart4; // Teensy pins 7(RX) 8(TX)
+	};
+};
+
+&lpuart4 {
+	current-speed = <115200>;
+	status = "okay";
+};
+

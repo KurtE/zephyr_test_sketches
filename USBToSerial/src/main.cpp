@@ -31,8 +31,10 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include "UARTDevice.h"
 #include "USBSerialDevice.h"
 
+#if 0
 static const struct gpio_dt_spec connector_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), digital_pin_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
+#endif 
 
 const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
 
@@ -69,11 +71,14 @@ int main(void)
 
 	USBSerial.begin();
 	SerialX.begin();
+	USBSerial.println("USBToSerial test");
 
+#if 0
 	USBSerial.print("Print connector pins\n");
   	for (size_t i = 0; i < ARRAY_SIZE(connector_pins); i++) {
   		USBSerial.printf("%u %p %u\n", i, connector_pins[i].port, connector_pins[i].pin);
   	}
+#endif
 
   	// Main loop, would be nice if we setup events for the two RX queues, but startof KISS
   	for (;;) {
