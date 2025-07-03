@@ -14,7 +14,7 @@
 
 //#include <sample_usbd.h>
 // Turn on this option, to test to ee if camera errors out without screeen
-//#define TIMED_WAIT_NO_TFT
+//#define TIMED_WAIT_NO_TFT (1000/6)
 
 // Try using fixed normal memory buffer for display
 #define ILI9341_USE_FIXED_BUFFER
@@ -240,7 +240,7 @@ int main(void)
 		frame_count++;
 #ifdef TIMED_WAIT_NO_TFT
 		USBSerial.println(frame_count);
-		delay(1000);
+		delay(TIMED_WAIT_NO_TFT);
 
 #elif defined(ILI9341_USE_FIXED_BUFFER)
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
@@ -260,7 +260,7 @@ int main(void)
 
 		start_time = micros();
 		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
-		printk("writeRect: %lu\n", micros() - start_time);
+		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
 #endif
 
 		err = video_enqueue(video_dev, vbuf);
