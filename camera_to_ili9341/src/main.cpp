@@ -17,7 +17,9 @@
 //#define TIMED_WAIT_NO_TFT (1000/6)
 
 // Try using fixed normal memory buffer for display
-#define ILI9341_USE_FIXED_BUFFER
+//#define ILI9341_USE_FIXED_BUFFER
+// Hack try to use fixed buffer for camera
+#define CAMERA_USE_FIXED_BUFFER
 
 
 #include <stdio.h>
@@ -105,7 +107,7 @@ extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
 
-#ifdef ILI9341_USE_FIXED_BUFFER
+#if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
 #endif
 
@@ -193,6 +195,13 @@ int main(void)
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
+		#ifdef CAMERA_USE_FIXED_BUFFER
+		if ((i == 0) &&  (buffers[i] != NULL)) {
+			// REAL hack change the buffer over to our fixed buffer...
+			buffers[i]->buffer = (uint8_t *)frame_buffer;
+		}
+		#endif
+
 		printk("  %d:%x\n", i, (uint32_t)buffers[i]);
 		if (buffers[i] == NULL) {
 			printk("ERROR: Unable to alloc video buffer\n") ;
