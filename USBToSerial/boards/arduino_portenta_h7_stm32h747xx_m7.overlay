@@ -7,6 +7,15 @@
 	};
 };
 
+/ {
+	zephyr,user {
+		builtin-led-gpios = <&gpiok 5 0>,
+				    <&gpiok 6 0>,
+				    <&gpiok 7 0>;
+
+	};
+};
+
 &usart1 {
 	status = "okay";
 };

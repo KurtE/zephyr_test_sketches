@@ -13,6 +13,12 @@
  */
 
 //#include <sample_usbd.h>
+// Turn on this option, to test to ee if camera errors out without screeen
+//#define TIMED_WAIT_NO_TFT
+
+// Try using fixed normal memory buffer for display
+#define ILI9341_USE_FIXED_BUFFER
+
 
 #include <stdio.h>
 #include <string.h>
@@ -94,126 +100,14 @@ static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
 ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pins[2]);
 
 
-//=================================================================
-// forward references of functions
-
-// from teensy cores (map)
-#include <type_traits>
-
-// map() transforms input "x" from one numerical range to another.  For example, if
-// you have analogInput() from 0 to 1023 and you want 5 to 25, use
-// map(x, 0, 1023, 5, 25).  When "x" is an integer, the math is performed using
-// integers and an integer number is returned.  When "x" is a floating point number,
-// math is performed and result returned as floating point, to allow for fine grain
-// mapping.
-template <class T, class A, class B, class C, class D>
-long map(T _x, A _in_min, B _in_max, C _out_min, D _out_max, typename std::enable_if<std::is_integral<T>::value >::type* = 0)
-{
-	// when the input number is an integer type, do all math as 32 bit signed long
-	long x = _x, in_min = _in_min, in_max = _in_max, out_min = _out_min, out_max = _out_max;
-	// Arduino's traditional algorithm
-#if 0
-	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-#endif
-#if 0
-	// st42's suggestion: https://github.com/arduino/Arduino/issues/2466#issuecomment-69873889
-	if ((in_max - in_min) > (out_max - out_min)) {
-		return (x - in_min) * (out_max - out_min+1) / (in_max - in_min+1) + out_min;
-	} else {
-		return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-	}
-#endif
-	// first compute the ranges and check if input doesn't matter
-	long in_range = in_max - in_min;
-	long out_range = out_max - out_min;
-	if (in_range == 0) return out_min + out_range / 2;
-	// compute the numerator
-	long num = (x - in_min) * out_range;
-	// before dividing, add extra for proper round off (towards zero)
-	if (out_range >= 0) {
-		num += in_range / 2;
-	} else {
-		num -= in_range / 2;
-	}
-	// divide by input range and add output offset to complete map() compute
-	long result = num / in_range + out_min;
-	// fix "a strange behaviour with negative numbers" (see ArduinoCore-API issue #51)
-	//   this step can be deleted if you don't care about non-linear output
-	//   behavior extrapolating slightly beyond the mapped input & output range
-	if (out_range >= 0) {
-		if (in_range * num < 0) return result - 1;
-	} else {
-		if (in_range * num >= 0) return result + 1;
-	}
-	return result;
-	// more conversation:
-	// https://forum.pjrc.com/threads/44503-map()-function-improvements
-}
 // map() transforms input "x" from one numerical range to another.  For example, if
 extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
+extern void initialize_display();
 
-//----------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------
-extern "C" {
-
-int camera_ext_clock_enable(void)
-{
-	int ret;
-	uint32_t rate;
-
-	const struct device *cam_ext_clk_dev = DEVICE_DT_GET(DT_NODELABEL(pwmclock));
-
-	if (!device_is_ready(cam_ext_clk_dev)) {
-		return -ENODEV;
-	}
-
-	ret = clock_control_on(cam_ext_clk_dev, (clock_control_subsys_t)0);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = clock_control_get_rate(cam_ext_clk_dev, (clock_control_subsys_t)0, &rate);
-	if (ret < 0) {
-		return ret;
-	}
-
-	return 0;
-}
-
-SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
-
-//----------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------
-
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
-
-int smh_init(void) {
-    int ret = 0;
-    ret = shared_multi_heap_pool_init();
-    if (ret != 0) {
-        return ret;
-    }
-
-    struct shared_multi_heap_region smh_sdram = {
-        .attr = SMH_REG_ATTR_EXTERNAL,
-        .addr = (uintptr_t) smh_pool,
-        .size = sizeof(smh_pool)
-    };
-
-    ret = shared_multi_heap_add(&smh_sdram, NULL);
-    if (ret != 0) {
-        return ret;
-    }
-	return 0;
-}
-
-SYS_INIT(smh_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-
-} // extern c
-
-//----------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------
+#ifdef ILI9341_USE_FIXED_BUFFER
+uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
+#endif
 
 
 
@@ -230,48 +124,13 @@ int main(void)
 
 	int ret;
 
+	// Start up the Serial
 	USBSerial.begin();
 	//SerialX.begin();
 	USBSerial.println("Camera capture...");
-	tft.setDebugUART(&USBSerial);
-	tft.begin();
-	tft.setRotation(1);
 
-	tft.fillScreen(ILI9341_BLACK);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_RED);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_GREEN);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_BLUE);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_WHITE);
-
-	WaitForUserInput(1000);
-	tft.fillScreen(ILI9341_BLACK);
-	uint32_t t0 = micros();
-	tft.fillRectHGradient(10, 10, 100, 100, tft.color565(0 << 3, 0, 0), tft.color565(9 << 3, 0, 0));
-	uint32_t t1 = micros();
-	tft.fillRectHGradient(130, 10, 100, 100, ILI9341_YELLOW, ILI9341_GREEN);
-	uint32_t t2 = micros();
-	tft.fillRectVGradient(10, 130, 100, 100, tft.color565(0, 0, 0 << 3), tft.color565(0, 0, 9 << 3));
-	uint32_t t3 = micros();
-	tft.fillRectVGradient(130, 130, 100, 100, ILI9341_CYAN, ILI9341_BLUE);
-	uint32_t t4 = micros();
-	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
-	WaitForUserInput(2000);
-
-	// lets try to start the camera clock
-//	printk("Starting camera clock\n");
-//	ret = camera_ext_clock_enable();
-//	if (ret) {
-//		printk("    Failed: %d\n", ret);
-//	}
-
-	
-//	printk("Start Shared memory heap");
-//	smh_init();
-
+	// initialize the display
+	initialize_display();
 
 	// lets get camera information
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
@@ -377,14 +236,32 @@ int main(void)
 	  		continue;
 		}
 		// We need to byte swap here...
+		static int frame_count = 0;
+		frame_count++;
+#ifdef TIMED_WAIT_NO_TFT
+		USBSerial.println(frame_count);
+		delay(1000);
+
+#elif defined(ILI9341_USE_FIXED_BUFFER)
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
-        for (size_t i=0; i<CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT; i++) {
+        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
+            frame_buffer[i] = __REVSH(pixels[i]);
+        }
+
+		start_time = micros();
+		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, frame_buffer);
+		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
+
+#else
+        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
             pixels[i] = __REVSH(pixels[i]);
         }
 
 		start_time = micros();
 		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
 		printk("writeRect: %lu\n", micros() - start_time);
+#endif
 
 		err = video_enqueue(video_dev, vbuf);
 		if (err) {
@@ -396,6 +273,46 @@ int main(void)
 	return 0;
 }
 
+//----------------------------------------------------------------------------------
+// iniitialize the display and do some graphic outputs to just to make sure it
+// is working
+//----------------------------------------------------------------------------------
+void initialize_display() {
+	//tft.setDebugUART(&USBSerial);
+	tft.begin();
+	tft.setRotation(1);
+
+	tft.fillScreen(ILI9341_BLACK);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_RED);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_GREEN);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_BLUE);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_WHITE);
+
+//	WaitForUserInput(1000);
+	tft.fillScreen(ILI9341_BLACK);
+	uint32_t t0 = micros();
+	tft.fillRectHGradient(10, 10, 100, 100, tft.color565(0 << 3, 0, 0), tft.color565(9 << 3, 0, 0));
+	uint32_t t1 = micros();
+	tft.fillRectHGradient(130, 10, 100, 100, ILI9341_YELLOW, ILI9341_GREEN);
+	uint32_t t2 = micros();
+	tft.fillRectVGradient(10, 130, 100, 100, tft.color565(0, 0, 0 << 3), tft.color565(0, 0, 9 << 3));
+	uint32_t t3 = micros();
+	tft.fillRectVGradient(130, 130, 100, 100, ILI9341_CYAN, ILI9341_BLUE);
+	uint32_t t4 = micros();
+	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
+	k_sleep(K_MSEC(500));
+//	WaitForUserInput(2000);
+
+
+}
+
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
 extern unsigned long millis(void);
 
 unsigned long millis(void) { return k_uptime_get_32(); }
@@ -483,4 +400,66 @@ void show_all_gpio_regs() {
   print_gpio_regs("K", (GPIO_TypeDef *)GPIOK_BASE);
 }
 
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+extern "C" {
+
+int camera_ext_clock_enable(void)
+{
+	int ret;
+	uint32_t rate;
+
+	const struct device *cam_ext_clk_dev = DEVICE_DT_GET(DT_NODELABEL(pwmclock));
+
+	if (!device_is_ready(cam_ext_clk_dev)) {
+		return -ENODEV;
+	}
+
+	ret = clock_control_on(cam_ext_clk_dev, (clock_control_subsys_t)0);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = clock_control_get_rate(cam_ext_clk_dev, (clock_control_subsys_t)0, &rate);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return 0;
+}
+
+SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+
+__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+
+int smh_init(void) {
+    int ret = 0;
+    ret = shared_multi_heap_pool_init();
+    if (ret != 0) {
+        return ret;
+    }
+
+    struct shared_multi_heap_region smh_sdram = {
+        .attr = SMH_REG_ATTR_EXTERNAL,
+        .addr = (uintptr_t) smh_pool,
+        .size = sizeof(smh_pool)
+    };
+
+    ret = shared_multi_heap_add(&smh_sdram, NULL);
+    if (ret != 0) {
+        return ret;
+    }
+	return 0;
+}
+
+SYS_INIT(smh_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+
+} // extern c
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
 
