@@ -109,7 +109,7 @@
 		compatible = "pwm-clock";
 		clock-frequency = <0>;
 		#clock-cells = <1>;
-		pwms = <&pwm1 1 PWM_HZ(10000000) PWM_POLARITY_NORMAL>;
+		pwms = <&pwm1 1 PWM_HZ(12000000) PWM_POLARITY_NORMAL>;
 		/* 12MHz for 7670, default is also 12MHz */
 	};
 };

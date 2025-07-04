@@ -102,10 +102,17 @@ static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
 ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pins[2]);
 
 
+// Camera/Video global variables.
+struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
+struct video_buffer *vbuf = nullptr;
+const struct device *video_dev;
+
+
 // map() transforms input "x" from one numerical range to another.  For example, if
 extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
+extern int initialize_video();
 
 #if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
@@ -115,14 +122,6 @@ uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
 
 int main(void)
 {
-	struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
-	struct video_buffer *vbuf = nullptr;
-	const struct device *video_dev;
-	struct video_format fmt;
-	struct video_caps caps;
-	enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
-	size_t bsize;
-	int i = 0;
 
 	int ret;
 
@@ -133,6 +132,120 @@ int main(void)
 
 	// initialize the display
 	initialize_display();
+
+	initialize_video();
+
+	// show all registers
+//	show_all_gpio_regs();
+	int frame_count = 0;
+	uint32_t read_frame_sum = 0;
+	uint32_t write_rect_sum = 0;
+	int sum_count = 0;
+
+	printk("Starting main loop\n");
+    for (;;) {
+		int err;
+		frame_count++;
+		uint32_t start_time = micros();
+		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
+		read_frame_sum += (micros() - start_time);
+		//printk("Dequeue: %lu\n", micros() - start_time);
+		if (err) {
+			printk("ERROR: Unable to dequeue video buf\n");
+	  		k_sleep(K_MSEC(1000));
+	  		continue;
+		}
+		// We need to byte swap here...
+#ifdef TIMED_WAIT_NO_TFT
+		USBSerial.println(frame_count);
+		delay(TIMED_WAIT_NO_TFT);
+
+#elif defined(ILI9341_USE_FIXED_BUFFER)
+        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
+            frame_buffer[i] = __REVSH(pixels[i]);
+        }
+
+		start_time = micros();
+		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, frame_buffer);
+		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
+
+#else
+        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
+            pixels[i] = __REVSH(pixels[i]);
+        }
+
+		start_time = micros();
+		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
+		write_rect_sum += micros() - start_time;
+		//printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
+#endif
+
+		err = video_enqueue(video_dev, vbuf);
+		if (err) {
+			printk("ERROR: Unable to requeue video buf\n");
+			continue;
+		}
+
+		sum_count++;
+		if (sum_count == 10) {
+			USBSerial.printf("%d %u RD: %u %u WR: %u %u\n", frame_count, sum_count, read_frame_sum, read_frame_sum / sum_count, write_rect_sum, write_rect_sum / sum_count);
+			sum_count = 0;
+			read_frame_sum = 0;
+			write_rect_sum = 0;
+		}
+
+  	}
+	return 0;
+}
+
+//----------------------------------------------------------------------------------
+// iniitialize the display and do some graphic outputs to just to make sure it
+// is working
+//----------------------------------------------------------------------------------
+void initialize_display() {
+	//tft.setDebugUART(&USBSerial);
+	tft.begin();
+	tft.setRotation(1);
+
+	tft.fillScreen(ILI9341_BLACK);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_RED);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_GREEN);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_BLUE);
+	k_sleep(K_MSEC(500));
+	tft.fillScreen(ILI9341_WHITE);
+
+//	WaitForUserInput(1000);
+	tft.fillScreen(ILI9341_BLACK);
+	uint32_t t0 = micros();
+	tft.fillRectHGradient(10, 10, 100, 100, tft.color565(0 << 3, 0, 0), tft.color565(9 << 3, 0, 0));
+	uint32_t t1 = micros();
+	tft.fillRectHGradient(130, 10, 100, 100, ILI9341_YELLOW, ILI9341_GREEN);
+	uint32_t t2 = micros();
+	tft.fillRectVGradient(10, 130, 100, 100, tft.color565(0, 0, 0 << 3), tft.color565(0, 0, 9 << 3));
+	uint32_t t3 = micros();
+	tft.fillRectVGradient(130, 130, 100, 100, ILI9341_CYAN, ILI9341_BLUE);
+	uint32_t t4 = micros();
+	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
+	k_sleep(K_MSEC(500));
+//	WaitForUserInput(2000);
+
+
+}
+
+//----------------------------------------------------------------------------------
+// iniitialize the camera/video
+//----------------------------------------------------------------------------------
+int initialize_video() {
+	struct video_format fmt;
+	struct video_caps caps;
+	enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
+	size_t bsize;
+	int i = 0;
 
 	// lets get camera information
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
@@ -230,95 +343,9 @@ int main(void)
 		return 0;
 	}
 
-	// show all registers
-//	show_all_gpio_regs();
-
-	printk("Starting main loop\n");
-    for (;;) {
-		int err;
-		uint32_t start_time = micros();
-		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
-		printk("Dequeue: %lu\n", micros() - start_time);
-		if (err) {
-			printk("ERROR: Unable to dequeue video buf\n");
-	  		k_sleep(K_MSEC(1000));
-	  		continue;
-		}
-		// We need to byte swap here...
-		static int frame_count = 0;
-		frame_count++;
-#ifdef TIMED_WAIT_NO_TFT
-		USBSerial.println(frame_count);
-		delay(TIMED_WAIT_NO_TFT);
-
-#elif defined(ILI9341_USE_FIXED_BUFFER)
-        uint16_t *pixels = (uint16_t *) vbuf->buffer;
-        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
-            frame_buffer[i] = __REVSH(pixels[i]);
-        }
-
-		start_time = micros();
-		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, frame_buffer);
-		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
-
-#else
-        uint16_t *pixels = (uint16_t *) vbuf->buffer;
-        for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
-            pixels[i] = __REVSH(pixels[i]);
-        }
-
-		start_time = micros();
-		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
-		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
-#endif
-
-		err = video_enqueue(video_dev, vbuf);
-		if (err) {
-			printk("ERROR: Unable to requeue video buf\n");
-			continue;
-		}
-
-  	}
-	return 0;
-}
-
-//----------------------------------------------------------------------------------
-// iniitialize the display and do some graphic outputs to just to make sure it
-// is working
-//----------------------------------------------------------------------------------
-void initialize_display() {
-	//tft.setDebugUART(&USBSerial);
-	tft.begin();
-	tft.setRotation(1);
-
-	tft.fillScreen(ILI9341_BLACK);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_RED);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_GREEN);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_BLUE);
-	k_sleep(K_MSEC(500));
-	tft.fillScreen(ILI9341_WHITE);
-
-//	WaitForUserInput(1000);
-	tft.fillScreen(ILI9341_BLACK);
-	uint32_t t0 = micros();
-	tft.fillRectHGradient(10, 10, 100, 100, tft.color565(0 << 3, 0, 0), tft.color565(9 << 3, 0, 0));
-	uint32_t t1 = micros();
-	tft.fillRectHGradient(130, 10, 100, 100, ILI9341_YELLOW, ILI9341_GREEN);
-	uint32_t t2 = micros();
-	tft.fillRectVGradient(10, 130, 100, 100, tft.color565(0, 0, 0 << 3), tft.color565(0, 0, 9 << 3));
-	uint32_t t3 = micros();
-	tft.fillRectVGradient(130, 130, 100, 100, ILI9341_CYAN, ILI9341_BLUE);
-	uint32_t t4 = micros();
-	USBSerial.printf("%u: %u %u %u %u\n", t4-t0, t1-t0, t2-t1, t3-t2, t4-t3);
-	k_sleep(K_MSEC(500));
-//	WaitForUserInput(2000);
-
+	return 1;
 
 }
-
 
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
