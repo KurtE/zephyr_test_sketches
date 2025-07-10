@@ -69,8 +69,6 @@ static struct spi_dt_spec ili9341_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
 #endif
 
-
-
 inline int min(int a, int b) {
 	return (a <= b)? a : b;
 }
@@ -113,6 +111,7 @@ extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
 extern int initialize_video();
+extern void print_camera_registers();
 
 #if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
@@ -194,6 +193,17 @@ int main(void)
 			sum_count = 0;
 			read_frame_sum = 0;
 			write_rect_sum = 0;
+		}
+
+		if (USBSerial.available()) {
+			while (USBSerial.read() != -1) {}
+			USBSerial.println("*** Paused ***");
+			int ch;
+			while ((ch = USBSerial.read()) == -1) {} 
+			if (ch == 'r') {
+				print_camera_registers();
+			}
+			while (USBSerial.read() != -1) {}
 		}
 
   	}

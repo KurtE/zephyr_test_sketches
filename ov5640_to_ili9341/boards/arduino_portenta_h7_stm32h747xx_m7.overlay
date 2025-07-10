@@ -1,3 +1,5 @@
+#define CONFIG_VIDEO_OV2640 
+
 /* This is copy of the Arduino setup */
 &board_cdc_acm_uart {
 	status = "okay";
@@ -17,22 +19,42 @@
 
 &i2c3 {
 	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
 
+#ifdef CONFIG_VIDEO_OV5640 
 	ov5640: ov5640@3c {
 		compatible = "ovti,ov5640";
 		reg = <0x3c>;
 		status = "okay";
 
 		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
-		powerdown-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
+		powerdown-gpios = <&gpiod 5 GPIO_ACTIVE_HIGH>;
 
 		port {
 			ov5640_ep_out: endpoint {
 				remote-endpoint-label = "dcmi_ep_in";
+       			bus-type = <5>;
 			};
 		};
 	};
+#endif
+#ifdef CONFIG_VIDEO_OV2640 
+	ov2640: ov2640@30 {
+		compatible = "ovti,ov2640";
+		reg = <0x30>;
+		status = "okay";
 
+		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
+		//powerdown-gpios = <&gpiod 5 GPIO_ACTIVE_HIGH>;
+
+		port {
+			ov2640_ep_out: endpoint {
+				remote-endpoint-label = "dcmi_ep_in";
+       			bus-type = <5>;
+			};
+		};
+	};
+#endif
 };
 
 &i2c1 {
@@ -109,7 +131,7 @@
 		compatible = "pwm-clock";
 		clock-frequency = <0>;
 		#clock-cells = <1>;
-		pwms = <&pwm1 1 PWM_HZ(12000000) PWM_POLARITY_NORMAL>;
+		pwms = <&pwm1 1 PWM_HZ(24000000) PWM_POLARITY_NORMAL>;
 		/* 12MHz for 7670, default is also 12MHz */
 	};
 };
@@ -139,11 +161,16 @@
 
 	port {
 		dcmi_ep_in: endpoint {
+#ifdef CONFIG_VIDEO_OV5640 
 			remote-endpoint-label = "ov5640_ep_out";
+#endif
+#ifdef CONFIG_VIDEO_OV2640 
+			remote-endpoint-label = "ov2640_ep_out";
+#endif			
 			bus-width = <8>;
 			hsync-active = <0>;
 			vsync-active = <0>;
-			pclk-sample = <0>;
+			pclk-sample = <1>;
 		};
 	};
 };
