@@ -1,4 +1,4 @@
-#define CONFIG_VIDEO_OV2640 
+#define CONFIG_VIDEO_OV5640 
 
 /* This is copy of the Arduino setup */
 &board_cdc_acm_uart {
@@ -27,8 +27,10 @@
 		reg = <0x3c>;
 		status = "okay";
 
-		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
-		powerdown-gpios = <&gpiod 5 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpioe 3 0>;
+		powerdown-gpios = <&gpiod 5 0>;
+//		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
+//		powerdown-gpios = <&gpiod 5 GPIO_ACTIVE_HIGH>;
 
 		port {
 			ov5640_ep_out: endpoint {

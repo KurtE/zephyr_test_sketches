@@ -143,6 +143,17 @@ int main(void)
 
 	printk("Starting main loop\n");
     for (;;) {
+		if (USBSerial.available()) {
+			while (USBSerial.read() != -1) {}
+			USBSerial.println("*** Paused ***");
+			int ch;
+			while ((ch = USBSerial.read()) == -1) {} 
+			if (ch == 'r') {
+				print_camera_registers();
+			}
+			while (USBSerial.read() != -1) {}
+		}
+
 		int err;
 		frame_count++;
 		uint32_t start_time = micros();
@@ -194,18 +205,6 @@ int main(void)
 			read_frame_sum = 0;
 			write_rect_sum = 0;
 		}
-
-		if (USBSerial.available()) {
-			while (USBSerial.read() != -1) {}
-			USBSerial.println("*** Paused ***");
-			int ch;
-			while ((ch = USBSerial.read()) == -1) {} 
-			if (ch == 'r') {
-				print_camera_registers();
-			}
-			while (USBSerial.read() != -1) {}
-		}
-
   	}
 	return 0;
 }
