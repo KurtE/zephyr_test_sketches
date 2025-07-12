@@ -20,7 +20,7 @@
 //#define ILI9341_USE_FIXED_BUFFER
 // Hack try to use fixed buffer for camera
 //#define CAMERA_USE_FIXED_BUFFER
-
+//#define SWAP_PIXEL_BYTES
 
 #include <stdio.h>
 #include <string.h>
@@ -172,20 +172,22 @@ int main(void)
 
 #elif defined(ILI9341_USE_FIXED_BUFFER)
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
+#ifdef SWAP_PIXEL_BYTES
         for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
             frame_buffer[i] = __REVSH(pixels[i]);
         }
-
+#endif
 		start_time = micros();
 		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, frame_buffer);
 		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
 
 #else
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
+#ifdef SWAP_PIXEL_BYTES
         for (size_t i=0; i < (CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
             pixels[i] = __REVSH(pixels[i]);
         }
-
+#endif
 		start_time = micros();
 		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
 		write_rect_sum += micros() - start_time;
@@ -311,6 +313,15 @@ int initialize_video() {
 		printk("ERROR: Partial framebuffers not supported by this sample\n") ;
 		return 0;
 	}
+
+	 struct video_frmival frmival = {
+	      .numerator = 1,
+	      .denominator = 30,
+	  };
+
+	  if(video_set_frmival(video_dev, &frmival) ) {
+	        printk("Failed to set video framerate\n");
+	  }
 	/* Size to allocate for each buffer */
 	bsize = fmt.pitch * fmt.height;
 
@@ -355,6 +366,7 @@ int initialize_video() {
 	}
 
 	// Lets see if we can call video_get_selection
+#if 0
 	printk("Get Video Selection:\n");
 	struct video_selection vsel;
 	vsel.type = VIDEO_BUF_TYPE_OUTPUT;
@@ -366,7 +378,7 @@ int initialize_video() {
 		printk("\tTy:%d Tar:%d R:%u %u %u %u\n", vsel.type, vsel.target,
 			vsel.rect.left, vsel.rect.top, vsel.rect.width, vsel.rect.height);
 	}
-
+#endif
 
 	return 1;
 
