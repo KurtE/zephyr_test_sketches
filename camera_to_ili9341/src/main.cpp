@@ -19,8 +19,9 @@
 // Try using fixed normal memory buffer for display
 //#define ILI9341_USE_FIXED_BUFFER
 // Hack try to use fixed buffer for camera
-//#define CAMERA_USE_FIXED_BUFFER
+#define CAMERA_USE_FIXED_BUFFER
 
+#define USE_ST7796
 
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +43,8 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include "UARTDevice.h"
 #include "ILI9341_GIGA_zephyr.h"
 
+#include "ST77XX_zephyr.h"
+
 #include <zephyr/drivers/video.h>
 #include <zephyr/drivers/video-controls.h>
 #include <zephyr/devicetree.h>
@@ -55,18 +58,18 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 //const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
-//const struct device *const ili9341_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
+//const struct device *const generic_tft_spi =  DEVICE_DT_GET(DT_CHOSEN(spi_ili9341));
 #define SPI_OP (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB )
 
 #if defined(ATP)
-static struct spi_dt_spec ili9341_spi =
+static struct spi_dt_spec generic_tft_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341atp_spi_dev), SPI_OP, 0);
 #elif defined(PJRC)
-static struct spi_dt_spec ili9341_spi =
+static struct spi_dt_spec generic_tft_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341prjc_spi_dev), SPI_OP, 0);
 #else
-static struct spi_dt_spec ili9341_spi =
-	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341_spi_dev), SPI_OP, 0);
+static struct spi_dt_spec generic_tft_spi =
+	SPI_DT_SPEC_GET(DT_NODELABEL(generic_tft_spi_dev), SPI_OP, 0);
 #endif
 
 
@@ -89,18 +92,21 @@ unsigned long micros(void) {
  }
 
 #if defined(ATP)
-static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
+static const struct gpio_dt_spec generic_tft_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341atp_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 #elif defined(PJRC)
-static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
+static const struct gpio_dt_spec generic_tft_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341pjrc_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 #else
-static const struct gpio_dt_spec ili9341_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
-    DT_PATH(zephyr_user), ili9341_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
+static const struct gpio_dt_spec generic_tft_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
+    DT_PATH(zephyr_user), generic_tft_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 #endif
 
-ILI9341_GIGA_n tft(&ili9341_spi, &ili9341_pins[0], &ili9341_pins[1], &ili9341_pins[2]);
-
+#ifdef USE_ST7796
+ST7796_zephyr tft(&generic_tft_spi, &generic_tft_pins[0], &generic_tft_pins[1], &generic_tft_pins[2]);
+#else
+ILI9341_GIGA_n tft(&generic_tft_spi, &generic_tft_pins[0], &generic_tft_pins[1], &generic_tft_pins[2]);
+#endif
 
 // Camera/Video global variables.
 struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
@@ -206,8 +212,13 @@ int main(void)
 //----------------------------------------------------------------------------------
 void initialize_display() {
 	//tft.setDebugUART(&USBSerial);
+#ifdef USE_ST7796
+  tft.begin();
+  tft.setRotation(1);
+#else
 	tft.begin();
 	tft.setRotation(1);
+#endif	
 
 	tft.fillScreen(ILI9341_BLACK);
 	k_sleep(K_MSEC(500));
