@@ -1,0 +1,67 @@
+/* This is copy of the Arduino setup */
+&board_cdc_acm_uart {
+	status = "okay";
+};
+
+&usart1 {
+	status = "okay";
+};
+
+&uart4 {
+	status = "okay";
+};
+
+&usart6 {
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};
+
+&dmamux1 {
+	status = "okay";
+};
+
+&dma1 {
+	status = "okay";
+};
+
+
+
+/ {
+	chosen {
+		zephyr,console = &usart6;
+		zephyr,shell-uart = &usart6;
+		zephyr,cdc-acm-uart0 = &usart6;
+	};
+
+	aliases {
+		dmax = &dma1;
+	};
+};
+
+
+/ {
+	zephyr,user {
+		builtin-led-gpios = <&gpiok 5 0>,
+				    <&gpiok 6 0>,
+				    <&gpiok 7 0>;
+
+	};
+};
+
