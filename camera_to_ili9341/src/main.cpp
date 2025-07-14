@@ -119,6 +119,8 @@ extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
 extern int initialize_video();
+extern void	draw_scaled_up_image(uint16_t *pixels);
+
 
 #if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CONFIG_VIDEO_WIDTH*CONFIG_VIDEO_HEIGHT];
@@ -147,9 +149,25 @@ int main(void)
 	uint32_t read_frame_sum = 0;
 	uint32_t write_rect_sum = 0;
 	int sum_count = 0;
+	bool scale_up = false;
 
 	printk("Starting main loop\n");
     for (;;) {
+		if (USBSerial.available()) {
+			while (USBSerial.read() != -1) {}
+			USBSerial.println("*** Paused ***");
+			int ch;
+			while ((ch = USBSerial.read()) == -1) {} 
+			//if (ch == 'r') {
+			//	print_camera_registers();
+			//}
+			if (ch == 's') {
+				scale_up = !scale_up;
+			}	
+			while (USBSerial.read() != -1) {}
+			continue;
+		}
+
 		int err;
 		frame_count++;
 		uint32_t start_time = micros();
@@ -183,7 +201,11 @@ int main(void)
         }
 
 		start_time = micros();
-		tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
+		if (scale_up) {
+			draw_scaled_up_image((uint16_t*)vbuf->buffer);
+		} else {
+			tft.writeRect(0, 0, CONFIG_VIDEO_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)vbuf->buffer);
+		}
 		write_rect_sum += micros() - start_time;
 		//printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
 #endif
@@ -371,6 +393,37 @@ int initialize_video() {
 
 
 	return 1;
+
+}
+uint16_t rows_buffer[480*3];
+void draw_scaled_up_image(uint16_t *pixels) {
+	// quick and dirty 1.5 scale up
+	uint16_t *pixels_row = pixels;
+	uint16_t tft_width = tft.width();
+	uint16_t tft_height = tft.height();
+	uint8_t write_height = 3;
+	for (int row = 0; row < tft_height; row += write_height) {
+		uint16_t *pixel = pixels_row;
+		if ((row + write_height) >= tft_height) {
+			write_height = (tft_height - row);
+		}
+		for (int col = 0; col < tft_width; col += 3) {
+			rows_buffer[col] = pixel[0];
+			rows_buffer[col+1] = pixel[0];
+			rows_buffer[col+2] = pixel[1];
+			rows_buffer[tft_width + col] = pixel[0];
+			rows_buffer[tft_width + col + 1] = pixel[CONFIG_VIDEO_WIDTH];
+			rows_buffer[tft_width + col + 2] = pixel[1];
+
+			rows_buffer[2 * tft_width + col] = pixel[CONFIG_VIDEO_WIDTH];
+			rows_buffer[2 * tft_width + col + 1] = pixel[CONFIG_VIDEO_WIDTH];
+			rows_buffer[2 * tft_width + col + 2] = pixel[CONFIG_VIDEO_WIDTH + 1];
+			pixel += 2;
+		}
+		tft.writeRect(0, row, tft_width, write_height, rows_buffer);
+		pixels_row += 2 * CONFIG_VIDEO_WIDTH;
+	}
+
 
 }
 
