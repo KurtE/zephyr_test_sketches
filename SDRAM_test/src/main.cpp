@@ -52,9 +52,10 @@ unsigned long micros(void) {
 #endif
  }
 
-#define BUFFER_SIZE (128)
+#define BUFFER_SIZE (32768)
+//#define BUFFER_SIZE (320*240*2)
 
-#define USE_STATIC_BUFFERS
+//#define USE_STATIC_BUFFERS
 #ifdef USE_STATIC_BUFFERS
 __aligned(32) uint8_t buffer0[BUFFER_SIZE];
 __aligned(32) uint8_t buffer1[BUFFER_SIZE];
@@ -63,8 +64,6 @@ uint8_t *sdram_buffers[3] = {buffer0, buffer1, buffer2};
 #else
 uint8_t *sdram_buffers[3];
 #endif
-//#define BUFFER_SIZE (320*240*2)
-//#define BUFFER_SIZE (32768)
 volatile bool dma_completed;
 
 void dma_callback(const struct device *dma_dev, void *user_data, uint32_t channel, int status)
@@ -95,7 +94,7 @@ int configure_dma_transfer(const struct device *dma_dev, uint8_t *src, uint8_t *
 		struct dma_block_config block_cfg = {
 	        .source_address = (uint32_t)src,
 	        .dest_address = (uint32_t)dest,
-	        .block_size = sizeof(size),
+	        .block_size = size,
 	    };
 
 		struct dma_config dma_cfg = {
@@ -168,8 +167,8 @@ int main(void)
 
 	for (uint8_t i = 0; i < (sizeof(sdram_buffers) / sizeof(sdram_buffers[0])); i++) {
 		#ifndef USE_STATIC_BUFFERS
-		//sdram_buffers[i] = (uint8_t *)shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, BUFFER_SIZE);
-		sdram_buffers[i] = (uint8_t *)k_malloc(BUFFER_SIZE);
+		sdram_buffers[i] = (uint8_t *)shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, BUFFER_SIZE);
+		//sdram_buffers[i] = (uint8_t *)k_malloc(BUFFER_SIZE);
 		#endif
 		printk("Buffer: %u ADDR:%p\n", i, sdram_buffers[i]);
 	}
