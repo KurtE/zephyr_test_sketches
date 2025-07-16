@@ -42,9 +42,6 @@ inline int min(int a, int b) {
 	return (a <= b)? a : b;
 }
 
-inline void delay(uint32_t ms) {
-	k_sleep(K_MSEC(ms));
-}
 
 // Need to do this.
 unsigned long micros(void) {
@@ -55,15 +52,25 @@ unsigned long micros(void) {
 #endif
  }
 
+#define BUFFER_SIZE (128)
 
+#define USE_STATIC_BUFFERS
+#ifdef USE_STATIC_BUFFERS
+__aligned(32) uint8_t buffer0[BUFFER_SIZE];
+__aligned(32) uint8_t buffer1[BUFFER_SIZE];
+__aligned(32) uint8_t buffer2[BUFFER_SIZE];
+uint8_t *sdram_buffers[3] = {buffer0, buffer1, buffer2};
+#else
 uint8_t *sdram_buffers[3];
+#endif
 //#define BUFFER_SIZE (320*240*2)
-#define BUFFER_SIZE (32768)
+//#define BUFFER_SIZE (32768)
 volatile bool dma_completed;
 
-void dma_callback(const struct device *dma_dev, void *arg, uint32_t channel, int status)
+void dma_callback(const struct device *dma_dev, void *user_data, uint32_t channel, int status)
 {
     if (status == 0) {
+
 //        LOG_INF("DMA transfer complete on channel %d", channel);
     } else {
         LOG_ERR("DMA transfer failed with status %d on channel %d", status, channel);
@@ -71,36 +78,54 @@ void dma_callback(const struct device *dma_dev, void *arg, uint32_t channel, int
     dma_completed = true;
 }
 
-int configure_dma_transfer(const struct device *dma_dev, uint8_t *src, uint8_t *dest, size_t size, uint8_t channel)
+
+int configure_dma_transfer(const struct device *dma_dev, uint8_t *src, uint8_t *dest, size_t size, int channel)
 {
-	struct dma_config dma_cfg = {0};
-	struct dma_block_config block_cfg = {0};
+	int ret = 0;
 
-	block_cfg.source_address = (uint32_t)src;
-	block_cfg.dest_address = (uint32_t)dest;
-	block_cfg.block_size = size;
+	SCB_CleanDCache_by_Addr((uint32_t *)src, size);
+    SCB_InvalidateDCache_by_Addr((uint32_t *)sdram_buffers[2], BUFFER_SIZE);
 
-	LOG_DBG("source: 0x%x, dest: 0x%x", block_cfg.source_address, block_cfg.dest_address);
+	static bool first_time = true;
+	if (first_time) {
+		first_time = false;
+		//printk("configure_dma_transfer(%p, %p, %p, %u %u)\n", dma_dev, src, dest, size, channel);
 
-	dma_cfg.channel_direction = MEMORY_TO_MEMORY;
-	dma_cfg.source_burst_length = 4;  // Assuming 4 bytes per burst
-	dma_cfg.dest_burst_length = 4;
-	dma_cfg.source_data_size = 4;  // 4 bytes (32 bits)
-	dma_cfg.dest_data_size = 4;
-	dma_cfg.block_count = 1;
-	dma_cfg.head_block = &block_cfg;
-	dma_cfg.dma_callback = dma_callback;
 
-//	LOG_INF("Configuring DMA...");
+		struct dma_block_config block_cfg = {
+	        .source_address = (uint32_t)src,
+	        .dest_address = (uint32_t)dest,
+	        .block_size = sizeof(size),
+	    };
 
-	int ret = dma_config(dma_dev, channel, &dma_cfg);
-	if (ret != 0) {
-		LOG_ERR("DMA configuration failed with error %d\n", ret);
-		return ret;
+		struct dma_config dma_cfg = {
+	 		.dma_slot = 0,
+	        .channel_direction = MEMORY_TO_MEMORY,
+	        .complete_callback_en = true,
+	        .source_data_size = 1,
+	        .dest_data_size = 1,
+	        .source_burst_length = 1,
+	        .dest_burst_length = 1,
+	        .block_count = 1,
+	        .head_block = &block_cfg,
+	        .user_data = dest,
+	        .dma_callback = dma_callback,
+	    };
+		//static bool fConfigured = false;
+		//if (!fConfigured) {
+
+		ret = dma_config(dma_dev, channel, &dma_cfg);
+		if (ret != 0) {
+			LOG_ERR("DMA configuration failed with error %d\n", ret);
+			return ret;
+		}
+
+	} else {
+		ret = dma_reload(dma_dev, channel, (uint32_t)src, (uint32_t)dest, size);
+		if (ret) {
+			LOG_ERR("DMA Reload failed: %d", ret);
+		}
 	}
-
-//	LOG_INF("DMA configured");
-
     dma_completed = false;
 	ret = dma_start(dma_dev, channel);
 	if (ret != 0) {
@@ -126,26 +151,34 @@ int CheckBuffers(const char *sz, uint8_t *source, uint8_t *dest) {
 	return error_count;
 }
 
-
 int main(void)
 {
 
 	const struct device *dma_dev = DEVICE_DT_GET(DT_ALIAS(dmax));
-	struct dma_status dma_status = {0};
+	//struct dma_status dma_status = {0};
 	int ret = 0;
-	uint8_t tx_dma_channel = 2;
+	int tx_dma_channel = 1;
 	// Start up the Serial
 	//SerialX.begin();
-	delay(250);
+	k_sleep(K_MSEC(250));
 	printk("SDRAM test...\n");
+
+	//tx_dma_channel = dma_request_channel(dma_dev, 0);
+	printk("DMA Channel allocated %d\n", tx_dma_channel);
+
 	for (uint8_t i = 0; i < (sizeof(sdram_buffers) / sizeof(sdram_buffers[0])); i++) {
-		sdram_buffers[i] = (uint8_t *)shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, BUFFER_SIZE);
+		#ifndef USE_STATIC_BUFFERS
+		//sdram_buffers[i] = (uint8_t *)shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, BUFFER_SIZE);
+		sdram_buffers[i] = (uint8_t *)k_malloc(BUFFER_SIZE);
+		#endif
 		printk("Buffer: %u ADDR:%p\n", i, sdram_buffers[i]);
 	}
 
 	for (uint32_t loop_count = 0;; loop_count++) {
 		printk("loop: %u(%x) ", loop_count, loop_count & 0xff);
 		memset (sdram_buffers[0], loop_count & 0xff, BUFFER_SIZE);
+		memset (sdram_buffers[1], 0xff, BUFFER_SIZE);
+		memset (sdram_buffers[2], 0xaa, BUFFER_SIZE);
 
 		ret = configure_dma_transfer(dma_dev, sdram_buffers[0], sdram_buffers[2], BUFFER_SIZE, tx_dma_channel);
 		if (ret != 0) {
@@ -155,10 +188,17 @@ int main(void)
 		memcpy(sdram_buffers[1], sdram_buffers[0], BUFFER_SIZE);
 
 		CheckBuffers(" Memcpy:", sdram_buffers[0], sdram_buffers[1]);
-		while (!dma_completed) delay(1);
+		while (!dma_completed) k_sleep(K_MSEC(1));
+	   	
+        __DSB(); // Data Synchronization Barrier
+        SCB_InvalidateDCache_by_Addr((uint32_t *)sdram_buffers[2], BUFFER_SIZE);
+	   	if (int ret = dma_stop(dma_dev, tx_dma_channel)) {
+	   		LOG_ERR("dma_stop failed: %d", ret);
+	   	}
+
 		CheckBuffers(" DMA:", sdram_buffers[0], sdram_buffers[2]);
 		printk("\n");
-		delay(259);
+		k_sleep(K_MSEC(259));
 	}
 	return 0;
 }
