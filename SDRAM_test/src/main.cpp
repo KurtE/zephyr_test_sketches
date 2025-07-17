@@ -52,8 +52,8 @@ unsigned long micros(void) {
 #endif
  }
 
-#define BUFFER_SIZE (32768)
-//#define BUFFER_SIZE (320*240*2)
+//#define BUFFER_SIZE (32768)
+#define BUFFER_SIZE (320*240*2)
 
 //#define USE_STATIC_BUFFERS
 #ifdef USE_STATIC_BUFFERS
@@ -68,6 +68,11 @@ volatile bool dma_completed;
 
 void dma_callback(const struct device *dma_dev, void *user_data, uint32_t channel, int status)
 {
+	static bool first_time = true;
+	if (first_time) {
+		first_time = false;
+		printk("\ndma_callback(%p %p %u %d)\n", dma_dev, user_data, channel, status);
+	}
     if (status == 0) {
 
 //        LOG_INF("DMA transfer complete on channel %d", channel);
@@ -78,18 +83,39 @@ void dma_callback(const struct device *dma_dev, void *user_data, uint32_t channe
 }
 
 
+static struct dma_block_config g_block_cfgs[6];
+
+
 int configure_dma_transfer(const struct device *dma_dev, uint8_t *src, uint8_t *dest, size_t size, int channel)
 {
 	int ret = 0;
 
 	SCB_CleanDCache_by_Addr((uint32_t *)src, size);
-    SCB_InvalidateDCache_by_Addr((uint32_t *)sdram_buffers[2], BUFFER_SIZE);
+    SCB_InvalidateDCache_by_Addr((uint32_t *)sdram_buffers[2], size);
 
 	static bool first_time = true;
 	if (first_time) {
-		first_time = false;
+		//first_time = false;
 		//printk("configure_dma_transfer(%p, %p, %p, %u %u)\n", dma_dev, src, dest, size, channel);
 
+		// lets try building list of send and receive buffers.
+		size_t block_size = 65536-32;  // blocks < 64K and we want 32 byte dma boundaries
+		uint32_t block_index = 0;
+
+		while (size) {
+			if (size < block_size) block_size = size;
+			memset (&g_block_cfgs[block_index], 0, sizeof(dma_block_config)); 
+	       	g_block_cfgs[block_index].source_address = (uint32_t)src,
+	       	g_block_cfgs[block_index].dest_address = (uint32_t)dest,
+	       	g_block_cfgs[block_index].block_size = block_size,
+			g_block_cfgs[block_index].source_gather_en = 1U;
+
+	        src += block_size;
+	        dest += block_size;
+	        size -= block_size;
+	        if (size) g_block_cfgs[block_index].next_block = &g_block_cfgs[block_index + 1];
+	        block_index++;
+		}
 
 		struct dma_block_config block_cfg = {
 	        .source_address = (uint32_t)src,
@@ -105,8 +131,8 @@ int configure_dma_transfer(const struct device *dma_dev, uint8_t *src, uint8_t *
 	        .dest_data_size = 1,
 	        .source_burst_length = 1,
 	        .dest_burst_length = 1,
-	        .block_count = 1,
-	        .head_block = &block_cfg,
+	        .block_count = block_index,
+	        .head_block = &g_block_cfgs[0],
 	        .user_data = dest,
 	        .dma_callback = dma_callback,
 	    };
@@ -170,7 +196,7 @@ int main(void)
 		sdram_buffers[i] = (uint8_t *)shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, BUFFER_SIZE);
 		//sdram_buffers[i] = (uint8_t *)k_malloc(BUFFER_SIZE);
 		#endif
-		printk("Buffer: %u ADDR:%p\n", i, sdram_buffers[i]);
+		printk("Buffer: %u ADDR:%p size:%u\n", i, sdram_buffers[i], BUFFER_SIZE);
 	}
 
 	for (uint32_t loop_count = 0;; loop_count++) {
