@@ -11,8 +11,12 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/dma.h>
 
-
+#ifdef CONFIG_BOARD_TEENSYMM 
+#define DMA_NODE DT_NODELABEL(edma0)
+#else
 #define DMA_NODE DT_NODELABEL(dma1)
+#endif
+
 #define BUFFER_SIZE 128
 
 __aligned(32) uint8_t tx_buffer[BUFFER_SIZE];
