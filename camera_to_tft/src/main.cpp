@@ -82,6 +82,10 @@ inline void delay(uint32_t ms) {
 	k_sleep(K_MSEC(ms));
 }
 
+extern unsigned long millis(void);
+
+unsigned long millis(void) { return k_uptime_get_32(); }
+
 // Need to do this.
 unsigned long micros(void) {
 #ifdef CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER
@@ -186,15 +190,17 @@ int main(void)
 		frame_count++;
 		uint32_t start_time = micros();
 		#if defined(TRY_CAPTURE_SNAPSHOT)
-		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(10000)); 
+		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(250)); 
 		static uint8_t dbg_count = 5;
-		if (dbg_count) {
-			printk("video_capture_snapshot: %d\n", err);
-			dbg_count--;
+		uint32_t delta_time = micros() - start_time;
+		if (dbg_count || err || (delta_time > 200000)) {
+			printk("video_capture_snapshot: %d %u %u\n", err, frame_count, micros() - start_time);
+			if (dbg_count) dbg_count--;
+			else dbg_count = 3; // show that we received a few...
 		}
+		if (err) continue;
 		#else
 		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
-		#endif
 		read_frame_sum += (micros() - start_time);
 		//printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
@@ -202,6 +208,7 @@ int main(void)
 	  		k_sleep(K_MSEC(1000));
 	  		continue;
 		}
+		#endif
 		// We need to byte swap here...
 #ifdef TIMED_WAIT_NO_TFT
 		USBSerial.println(frame_count);
@@ -483,9 +490,6 @@ void draw_scaled_up_image(uint16_t *pixels) {
 
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
-extern unsigned long millis(void);
-
-unsigned long millis(void) { return k_uptime_get_32(); }
 
 void WaitForUserInput(uint32_t timeout) {
     USBSerial.print("Hit key to continue\n");
