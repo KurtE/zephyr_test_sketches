@@ -125,9 +125,9 @@ extern void initialize_display();
 extern int initialize_video();
 extern void	draw_scaled_up_image(uint16_t *pixels);
 
-#if (CONFIG_VIDEO_CROP_WIDTH > 0) && (CONFIG_VIDEO_CROP_WIDTH <= CONFIG_VIDEO_WIDTH) && (CONFIG_VIDEO_CROP_HEIGHT > 0) && (CONFIG_VIDEO_CROP_HEIGHT <= CONFIG_VIDEO_HEIGHT)
-#define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_CROP_WIDTH)
-#define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_CROP_HEIGHT)
+#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_HEIGHT)
+#define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_SOURCE_CROP_WIDTH)
+#define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_SOURCE_CROP_HEIGHT)
 #else
 #define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_WIDTH)
 #define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_HEIGHT)
@@ -352,15 +352,15 @@ int initialize_video() {
 	}
 	printk("video_get_format returned: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
 	/* Set format */
-	#if (CONFIG_VIDEO_CROP_WIDTH > 0) && (CONFIG_VIDEO_CROP_HEIGHT > 0)
-	printk("Set Video Selection CROP %d %d:\n", CONFIG_VIDEO_CROP_WIDTH, CONFIG_VIDEO_CROP_HEIGHT);
+	#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0)
+	printk("Set Video Selection CROP %d %d:\n", CONFIG_VIDEO_SOURCE_CROP_WIDTH, CONFIG_VIDEO_SOURCE_CROP_HEIGHT);
 	struct video_selection vselCrop;
 	vselCrop.type = VIDEO_BUF_TYPE_OUTPUT;
 	vselCrop.target = VIDEO_SEL_TGT_CROP; 
-	vselCrop.rect.left = 0;
-	vselCrop.rect.top = 0;
-	vselCrop.rect.width = CONFIG_VIDEO_CROP_WIDTH;
-	vselCrop.rect.height = CONFIG_VIDEO_CROP_HEIGHT;
+	vselCrop.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
+	vselCrop.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
+	vselCrop.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
+	vselCrop.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
 
 	if ((ret = video_set_selection(video_dev, &vselCrop))!= 0) {
 		printk("ERROR: %d\n", ret) ;
