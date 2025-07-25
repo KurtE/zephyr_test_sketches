@@ -25,6 +25,7 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 #error No camera chosen in devicetree. Missing "--shield" or "--snippet video-sw-generator" flag?
 #endif
 
+void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
 
 int main(void)
 {
@@ -197,21 +198,7 @@ int main(void)
 		LOG_DBG("Got frame %u! size: %u; timestamp %u ms",
 			frame++, vbuf->bytesused, vbuf->timestamp);
 
-		bool display_frame = false;
-		int ch;
-		while ((ch = usb_serial_read()) != -1) {
-			if (ch == 1) display_frame = true;
-		}
-		if (display_frame) {
-			uint16_t *pixels = (uint16_t*)vbuf->buffer;
-			uint16_t count_pixels = vbuf->bytesused / 2;
-			while (count_pixels) {
-		        usb_serial_write((*pixels >> 8) & 0xFF);
-        		usb_serial_write((*pixels) & 0xFF);
-        		pixels++;
-        		count_pixels--;
-        	}
-		}
+		maybe_send_image(vbuf, fmt.width, fmt.height);
 
 		err = video_enqueue(video_dev, vbuf);
 		if (err) {
@@ -221,3 +208,110 @@ int main(void)
 	}
 }
 
+
+// Pass 8-bit (each) R,G,B, get back 16-bit packed color
+uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+#define F(x) x
+
+inline uint16_t HTONS(uint16_t x) {
+#if defined(DVP_CAMERA_OV2640) || defined(DVP_CAMERA_OV5640)
+    return x;
+#else  //byte reverse
+    return ((x >> 8) & 0x00FF) | ((x << 8) & 0xFF00);
+#endif
+}
+
+void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height)
+{
+    usb_serial_write(0xFF);
+    usb_serial_write(0xAA);
+
+    uint16_t *frameBuffer = (uint16_t*)vbuf->buffer;
+
+    // BUGBUG:: maybe combine with the save to SD card code
+    unsigned char bmpFileHeader[14] = { 'B', 'M', 0, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0 };
+    unsigned char bmpInfoHeader[40] = { 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 24, 0 };
+
+    int rowSize = 4 * ((3 * frame_width + 3) / 4);  // how many bytes in the row (used to create padding)
+    int fileSize = 54 + frame_height * rowSize;     // headers (54 bytes) + pixel data
+
+    bmpFileHeader[2] = (unsigned char)(fileSize);
+    bmpFileHeader[3] = (unsigned char)(fileSize >> 8);
+    bmpFileHeader[4] = (unsigned char)(fileSize >> 16);
+    bmpFileHeader[5] = (unsigned char)(fileSize >> 24);
+
+    bmpInfoHeader[4] = (unsigned char)(frame_width);
+    bmpInfoHeader[5] = (unsigned char)(frame_width >> 8);
+    bmpInfoHeader[6] = (unsigned char)(frame_width >> 16);
+    bmpInfoHeader[7] = (unsigned char)(frame_width >> 24);
+    bmpInfoHeader[8] = (unsigned char)(frame_height);
+    bmpInfoHeader[9] = (unsigned char)(frame_height >> 8);
+    bmpInfoHeader[10] = (unsigned char)(frame_height >> 16);
+    bmpInfoHeader[11] = (unsigned char)(frame_height >> 24);
+
+
+    usb_serial_write_buffer(bmpFileHeader, sizeof(bmpFileHeader));  // write file header
+    usb_serial_write_buffer(bmpInfoHeader, sizeof(bmpInfoHeader));  // " info header
+
+    unsigned char bmpPad[rowSize - 3 * frame_width];
+    for (int i = 0; i < (int)(sizeof(bmpPad)); i++) {  // fill with 0s
+        bmpPad[i] = 0;
+    }
+
+
+    uint16_t *pfb = frameBuffer;
+    uint8_t img[3];
+    for (int y = frame_height - 1; y >= 0; y--) {  // iterate image array
+        pfb = &frameBuffer[y * frame_width];
+        for (int x = 0; x < frame_width; x++) {
+            //r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
+            uint16_t pixel = HTONS(*pfb++);
+            img[2] = (pixel >> 8) & 0xf8;  // r
+            img[1] = (pixel >> 3) & 0xfc;  // g
+            img[0] = (pixel << 3);         // b
+            usb_serial_write_buffer(img, 3);
+            k_sleep(K_USEC(8));
+
+        }
+        usb_serial_write_buffer(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
+    }
+
+    usb_serial_write(0xBB);
+    usb_serial_write(0xCC);
+
+    usb_serial_printf(F("ACK CMD CAM Capture Done. END\n"));
+    //camera.setHmirror(0);
+
+    k_sleep(K_MSEC(50));
+}
+
+void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height) {
+	int ch;
+	while ((ch = usb_serial_read()) != -1) {
+		switch(ch) {
+			#ifdef LATER
+            case 0x10:
+                {
+                    SerialUSB1.println(F("ACK CMD CAM start jpg single shoot. END"));
+                    send_jpeg();
+                    SerialUSB1.println(F("READY. END"));
+                }
+                break;
+            #endif
+            case 0x30:
+                {
+                	printk("Send BMP: %u %u\n", frame_width, frame_height);
+                    usb_serial_printf(F("ACK CMD CAM start single shoot ... "));
+                    send_image(vbuf, frame_width, frame_height);
+                    usb_serial_printf(F("READY. END"));
+                }
+                break;
+            default:
+            	break;
+        }
+
+	}
+}

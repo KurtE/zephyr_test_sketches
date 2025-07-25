@@ -51,7 +51,7 @@ static void interrupt_handler(const struct device *dev, void *data) {
 	int length;
 	int ret = 0;
 
-	printk("$");
+	//printk("$");
 	if (!uart_irq_update(usb_uart_dev)) {
 		return;
 	}
