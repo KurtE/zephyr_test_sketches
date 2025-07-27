@@ -85,6 +85,7 @@ int main(void)
 		LOG_ERR("Unable to retrieve video format");
 		return 0;
 	}
+	LOG_INF("video_get_format: ret fmt:%u w:%u h:%u",fmt.pixelformat, fmt.width, fmt.height);
 
 	/* Set the crop setting if necessary */
 #if CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT
@@ -93,6 +94,8 @@ int main(void)
 	sel.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
 	sel.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
 	sel.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
+	LOG_INF("video_set_selection: VIDEO_SEL_TGT_CROP(%u, %u, %u, %u)", 
+			sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
 	if (video_set_selection(video_dev, &sel)) {
 		LOG_ERR("Unable to set selection crop  (%u,%u)/%ux%u",
 			sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
@@ -102,6 +105,7 @@ int main(void)
 		sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
 #endif
 
+	LOG_INF("CONFIG_VIDEO_FRAME_HEIGHT: %u CONFIG_VIDEO_FRAME_WIDTH: %u", CONFIG_VIDEO_FRAME_HEIGHT, CONFIG_VIDEO_FRAME_WIDTH);
 #if CONFIG_VIDEO_FRAME_HEIGHT || CONFIG_VIDEO_FRAME_WIDTH
 #if CONFIG_VIDEO_FRAME_HEIGHT
 	fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
@@ -110,7 +114,7 @@ int main(void)
 #if CONFIG_VIDEO_FRAME_WIDTH
 	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
 #endif
-#if 0
+#if 1
 	/*
 	 * Check (if possible) if targeted size is same as crop
 	 * and if compose is necessary
@@ -122,7 +126,11 @@ int main(void)
 		return 0;
 	}
 
+	LOG_INF("video_get_selection VIDEO_SEL_TGT_CROP(%u,%u)/%ux%u",
+		sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
+
 	if (err == 0 && (sel.rect.width != fmt.width || sel.rect.height != fmt.height)) {
+		LOG_INF("SEL!=FMT S(%u %u) F(%u %u)",  fmt.width, fmt.height, sel.rect.width, sel.rect.height);
 		sel.target = VIDEO_SEL_TGT_COMPOSE;
 		sel.rect.left = 0;
 		sel.rect.top = 0;
@@ -187,8 +195,10 @@ int main(void)
 
 	/* Grab video frames */
 	vbuf->type = type;
+	uint32_t loop_count = 0;
 	while (1) {
-		printf(".");
+		loop_count++;
+		if ((loop_count & 0x1f) == 0) printf(".");
 		err = video_dequeue(video_dev, &vbuf, K_FOREVER);
 		if (err) {
 			LOG_ERR("Unable to dequeue video buf");
@@ -292,15 +302,14 @@ void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t 
 	int ch;
 	while ((ch = usb_serial_read()) != -1) {
 		switch(ch) {
-			#ifdef LATER
             case 0x10:
                 {
-                    SerialUSB1.println(F("ACK CMD CAM start jpg single shoot. END"));
-                    send_jpeg();
-                    SerialUSB1.println(F("READY. END"));
+                	printk("Send JPEG: %u %u - Not supported\n", frame_width, frame_height);
+                    usb_serial_printf("NAK CMD CAM start jpg single shoot. END");
+                    //send_jpeg();
+                    usb_serial_printf("READY. END");
                 }
                 break;
-            #endif
             case 0x30:
                 {
                 	printk("Send BMP: %u %u\n", frame_width, frame_height);

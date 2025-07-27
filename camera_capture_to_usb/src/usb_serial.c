@@ -116,11 +116,13 @@ void init_usb_serial()
 			k_sleep(K_MSEC(100));
 
 		}
+#if 0
 		loop_count++;
 		if (loop_count > 20) {
 			LOG_WRN("Waiting for DTR timeout");
 			break;
 		}
+#endif		
 	}
 
 	LOG_INF("DTR set");
