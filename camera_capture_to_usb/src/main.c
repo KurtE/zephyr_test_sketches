@@ -47,11 +47,6 @@ int main(void)
 	int err;
 
 	printf("Hello world\n");
-	/* When the video shell is enabled, do not run the capture loop */
-	if (IS_ENABLED(CONFIG_VIDEO_SHELL)) {
-		LOG_INF("Letting the user control the device with the video shell");
-		return 0;
-	}
 
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
 	if (!device_is_ready(video_dev)) {
@@ -79,6 +74,7 @@ int main(void)
 		i++;
 	}
 
+
 	/* Get default/native format */
 	fmt.type = type;
 	if (video_get_format(video_dev, &fmt)) {
@@ -86,6 +82,63 @@ int main(void)
 		return 0;
 	}
 	LOG_INF("video_get_format: ret fmt:%u w:%u h:%u",fmt.pixelformat, fmt.width, fmt.height);
+
+	/* try the order of stuff mentioned by @josuah */
+#ifndef USE_EXAMAPLE_ORDERS
+	LOG_INF("- Video format: %s %ux%u",
+		VIDEO_FOURCC_TO_STR(fmt.pixelformat), fmt.width, fmt.height);
+
+	if (video_set_format(video_dev, &fmt)) {
+		LOG_ERR("Unable to set format");
+		return 0;
+	}
+
+#if CONFIG_VIDEO_FRAME_HEIGHT || CONFIG_VIDEO_FRAME_WIDTH
+#if CONFIG_VIDEO_FRAME_HEIGHT
+	fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
+#endif
+
+#if CONFIG_VIDEO_FRAME_WIDTH
+	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
+#endif
+#endif	
+
+	/* First set the format which has the size of the frame defined */
+	LOG_INF("video_set_format: %u %u", fmt.width, fmt.height);
+	if (video_set_format(video_dev, &fmt)) {
+		LOG_ERR("Unable to set format");
+		return 0;
+	}
+
+	/* initialize the bsize to the size of the frame */
+	bsize = fmt.width * fmt.height * 2;
+	/* Set the crop setting if necessary */
+#if CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT
+	sel.target = VIDEO_SEL_TGT_CROP;
+	sel.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
+	sel.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
+	sel.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
+	sel.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
+	LOG_INF("video_set_selection: VIDEO_SEL_TGT_CROP(%u, %u, %u, %u)", 
+			sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
+	if (video_set_selection(video_dev, &sel)) {
+		LOG_ERR("Unable to set selection crop  (%u,%u)/%ux%u",
+			sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
+		return 0;
+	}
+	LOG_INF("Selection crop set to (%u,%u)/%ux%u",
+		sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
+	bsize = sel.rect.width * sel.rect.height * 2;
+#endif
+
+	if (video_get_format(video_dev, &fmt)) {
+		LOG_ERR("Unable to retrieve video format");
+		return 0;
+	}
+	LOG_INF("video_get_format: ret fmt:%u w:%u h:%u pitch:%u",fmt.pixelformat, fmt.width, fmt.height, fmt.pitch);
+
+
+#else /* USE_EXAMAPLE_ORDERS */
 
 	/* Set the crop setting if necessary */
 #if CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT
@@ -163,6 +216,7 @@ int main(void)
 	} else {
 		bsize = fmt.pitch * caps.min_line_count;
 	}
+#endif /*USE_EXAMAPLE_ORDER*/
 
 	/* Alloc video buffers and enqueue for capture */
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
@@ -177,6 +231,7 @@ int main(void)
 			return 0;
 		}
 		buffers[i]->type = type;
+		LOG_INF(" %u Buffer: %p cb:%u", i, (void*)buffers[i]->buffer, bsize);
 		video_enqueue(video_dev, buffers[i]);
 	}
 

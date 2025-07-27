@@ -104,7 +104,7 @@ void init_usb_serial()
 	k_sem_init(&_tx_sem, 1, 1);
 	ring_buf_init(&_tx_ringbuf, sizeof(_tx_buffer), _tx_buffer);
 
-	uint8_t loop_count = 0;
+	//uint8_t loop_count = 0;
 	while (true) {
 		uint32_t dtr = 0U;
 
