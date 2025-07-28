@@ -25,12 +25,16 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 #error No camera chosen in devicetree. Missing "--shield" or "--snippet video-sw-generator" flag?
 #endif
 
-void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
+extern void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
+extern void main_loop_continuous(const struct device *video_dev, struct video_format *fmt);
+extern void main_loop_snapshot(const struct device *video_dev, struct video_format *fmt);
+extern void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
+#define F(x) x
 
 int main(void)
 {
 	struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
-	struct video_buffer *vbuf = &(struct video_buffer){};
+	//struct video_buffer *vbuf = &(struct video_buffer){};
 	const struct device *video_dev;
 	struct video_format fmt;
 	struct video_caps caps;
@@ -41,7 +45,7 @@ int main(void)
 		.type = VIDEO_BUF_TYPE_OUTPUT,
 	};
 #endif
-	unsigned int frame = 0;
+	//unsigned int frame = 0;
 	size_t bsize;
 	int i = 0;
 	int err;
@@ -247,9 +251,23 @@ int main(void)
 
 	usb_serial_printf("Print to USB Serial\n");
 
+	bool snapshot_mode = false;
+	if ((err = video_get_snapshot_mode(video_dev, &snapshot_mode))) {
+		LOG_INF("video_get_snapshot_mode failed: %d", err);
+	}
+	printk("snapshot_mode: %u\n", snapshot_mode);
+	if (snapshot_mode) {
+		main_loop_snapshot(video_dev, &fmt);
+	} else {
+		main_loop_continuous(video_dev, &fmt);
+	}
+}
 
-	/* Grab video frames */
-	vbuf->type = type;
+
+void main_loop_continuous(const struct device *video_dev, struct video_format *fmt) {
+	struct video_buffer *vbuf = &(struct video_buffer){};
+	int err;
+	unsigned int frame = 0;
 	uint32_t loop_count = 0;
 	while (1) {
 		loop_count++;
@@ -257,29 +275,72 @@ int main(void)
 		err = video_dequeue(video_dev, &vbuf, K_FOREVER);
 		if (err) {
 			LOG_ERR("Unable to dequeue video buf");
-			return 0;
+			continue;
 		}
 
 		LOG_DBG("Got frame %u! size: %u; timestamp %u ms",
 			frame++, vbuf->bytesused, vbuf->timestamp);
 
-		maybe_send_image(vbuf, fmt.width, fmt.height);
+		maybe_send_image(vbuf, fmt->width, fmt->height);
 
 		err = video_enqueue(video_dev, vbuf);
 		if (err) {
 			LOG_ERR("Unable to requeue video buf");
-			return 0;
 		}
 	}
 }
 
+void main_loop_snapshot(const struct device *video_dev, struct video_format *fmt) {
+	struct video_buffer *vbuf = &(struct video_buffer){};
+	int err;
+	unsigned int frame = 0;
+
+	int ch;
+	while (1) {
+		while ((ch = usb_serial_read()) != -1) {
+			switch(ch) {
+	            case 0x10:
+	                {
+	                	printk("Send JPEG: %u %u - Not supported\n", fmt->width, fmt->height);
+	                    usb_serial_printf("NAK CMD CAM start jpg single shoot. END");
+	                    //send_jpeg();
+	                    usb_serial_printf("READY. END");
+	                }
+	                break;
+	            case 0x30:
+	                {
+	                	printk("Send BMP: %u %u\n", fmt->width, fmt->height);
+
+						err = video_dequeue(video_dev, &vbuf, K_FOREVER);
+						if (err) {
+							LOG_ERR("Unable to dequeue video buf");
+							continue;
+						}
+
+						LOG_DBG("Got frame %u! size: %u; timestamp %u ms",
+							frame++, vbuf->bytesused, vbuf->timestamp);
+
+	                    usb_serial_printf(F("ACK CMD CAM start single shoot ... "));
+	                    send_image(vbuf, fmt->width, fmt->height);
+	                    usb_serial_printf(F("READY. END"));
+						err = video_enqueue(video_dev, vbuf);
+	                }
+	                break;
+	            default:
+	            	break;
+	        }
+		}
+    	k_sleep(K_MSEC(50));
+	}
+}
+
+	
 
 // Pass 8-bit (each) R,G,B, get back 16-bit packed color
 uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-#define F(x) x
 
 inline uint16_t HTONS(uint16_t x) {
 #if defined(DVP_CAMERA_OV2640) || defined(DVP_CAMERA_OV5640)
