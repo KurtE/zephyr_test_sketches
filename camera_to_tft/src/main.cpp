@@ -21,6 +21,7 @@
 // Hack try to use fixed buffer for camera
 //#define CAMERA_USE_FIXED_BUFFER
 #define TRY_CAPTURE_SNAPSHOT
+//#define TRY_WRITERECTCB
 #define USE_ST7796
 
 #include <stdio.h>
@@ -125,26 +126,31 @@ extern void initialize_display();
 extern int initialize_video();
 extern void	draw_scaled_up_image(uint16_t *pixels);
 
-#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_HEIGHT)
+#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_FRAME_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_FRAME_HEIGHT)
 #define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_SOURCE_CROP_WIDTH)
 #define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_SOURCE_CROP_HEIGHT)
 #else
-#define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_WIDTH)
-#define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_HEIGHT)
+#define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_FRAME_WIDTH)
+#define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_FRAME_HEIGHT)
 #endif
 
 #if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
-uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_HEIGHT];
+uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT];
 #endif
 
-#if defined(TRY_CAPTURE_SNAPSHOT)
-#if (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) <= (320*240)
-uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_HEIGHT];
-#else
-uint16_t *frame_buffer = nullptr;
+//#if defined(TRY_CAPTURE_SNAPSHOT)
+//#if (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) <= (320*240)
+//uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT];
+//#else
+//uint16_t *frame_buffer = nullptr;
+//#endif
+//#endif
+#ifdef TRY_WRITERECTCB
+volatile bool write_rect_active = false;
+void writerectCallback(int result) {
+	write_rect_active = false;
+}
 #endif
-#endif
-
 
 int main(void)
 {
@@ -189,17 +195,17 @@ int main(void)
 		int err;
 		frame_count++;
 		uint32_t start_time = micros();
-		#if defined(TRY_CAPTURE_SNAPSHOT)
-		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(250)); 
-		static uint8_t dbg_count = 5;
-		uint32_t delta_time = micros() - start_time;
-		if (dbg_count || err || (delta_time > 200000)) {
-			printk("video_capture_snapshot: %d %u %u\n", err, frame_count, micros() - start_time);
-			if (dbg_count) dbg_count--;
-			else dbg_count = 3; // show that we received a few...
-		}
-		if (err) continue;
-		#else
+//		#if defined(TRY_CAPTURE_SNAPSHOT)
+//		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(250)); 
+//		static uint8_t dbg_count = 5;
+//		uint32_t delta_time = micros() - start_time;
+//		if (dbg_count || err || (delta_time > 200000)) {
+//			printk("video_capture_snapshot: %d %u %u\n", err, frame_count, micros() - start_time);
+//			if (dbg_count) dbg_count--;
+//			else dbg_count = 3; // show that we received a few...
+//		}
+//		if (err) continue;
+//		#else
 		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
 		read_frame_sum += (micros() - start_time);
 		//printk("Dequeue: %lu\n", micros() - start_time);
@@ -208,7 +214,7 @@ int main(void)
 	  		k_sleep(K_MSEC(1000));
 	  		continue;
 		}
-		#endif
+//		#endif
 		// We need to byte swap here...
 #ifdef TIMED_WAIT_NO_TFT
 		USBSerial.println(frame_count);
@@ -216,21 +222,21 @@ int main(void)
 
 #elif defined(ILI9341_USE_FIXED_BUFFER)
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
-        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
+        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
             frame_buffer[i] = __REVSH(pixels[i]);
         }
 
 		start_time = micros();
-		tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_HEIGHT, frame_buffer);
+		tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, frame_buffer);
 		printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
 
 #else
-#if defined(TRY_CAPTURE_SNAPSHOT)
-		uint16_t *pixels = frame_buffer;
-#else		
+//#if defined(TRY_CAPTURE_SNAPSHOT)
+//		uint16_t *pixels = frame_buffer;
+//#else		
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
-#endif        
-        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_HEIGHT); i++) {
+//#endif        
+        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
             pixels[i] = __REVSH(pixels[i]);
         }
 
@@ -238,19 +244,25 @@ int main(void)
 		if (scale_up) {
 			draw_scaled_up_image(pixels);
 		} else {
-			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_HEIGHT, (uint16_t*)pixels);
+			#ifdef TRY_WRITERECTCB
+			write_rect_active = true;
+			tft.writeRectCB(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels, &writerectCallback);
+			while (write_rect_active) k_sleep(K_USEC(59));
+			#else
+			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels);
+			#endif
 		}
 		write_rect_sum += micros() - start_time;
 		//printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
 #endif
 
-		#if !defined(TRY_CAPTURE_SNAPSHOT)
+		//#if !defined(TRY_CAPTURE_SNAPSHOT)
 		err = video_enqueue(video_dev, vbuf);
 		if (err) {
 			printk("ERROR: Unable to requeue video buf\n");
 			continue;
 		}
-		#endif
+		//#endif
 		sum_count++;
 		if (sum_count == 10) {
 			USBSerial.printf("%d %u RD: %u %u WR: %u %u\n", frame_count, sum_count, read_frame_sum, read_frame_sum / sum_count, write_rect_sum, write_rect_sum / sum_count);
@@ -278,13 +290,13 @@ void initialize_display() {
 #endif	
 
 	tft.fillScreen(ILI9341_BLACK);
-	k_sleep(K_MSEC(500));
+	//k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_RED);
-	k_sleep(K_MSEC(500));
+	//k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_GREEN);
-	k_sleep(K_MSEC(500));
+	//k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_BLUE);
-	k_sleep(K_MSEC(500));
+	//k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_WHITE);
 
 //	WaitForUserInput(1000);
@@ -352,6 +364,16 @@ int initialize_video() {
 	}
 	printk("video_get_format returned: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
 	/* Set format */
+	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
+	fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
+	fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
+	printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
+
+	if (video_set_format(video_dev, &fmt)) {
+		printk("ERROR: Unable to set up video format\n") ;
+		return 0;
+	}
+
 	#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0)
 	printk("Set Video Selection CROP %d %d:\n", CONFIG_VIDEO_SOURCE_CROP_WIDTH, CONFIG_VIDEO_SOURCE_CROP_HEIGHT);
 	struct video_selection vselCrop;
@@ -370,15 +392,6 @@ int initialize_video() {
 
 	#endif
 
-	fmt.width = CONFIG_VIDEO_WIDTH;
-	fmt.height = CONFIG_VIDEO_HEIGHT;
-	fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
-	printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
-
-	if (video_set_format(video_dev, &fmt)) {
-		printk("ERROR: Unable to set up video format\n") ;
-		return 0;
-	}
 
 	printk("INFO: - Format: %c%c%c%c %ux%u %u\n",   (char)fmt.pixelformat, (char)(fmt.pixelformat >> 8),
 		(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
@@ -389,6 +402,15 @@ int initialize_video() {
 		return 0;
 	}
 	/* Size to allocate for each buffer */
+	/* lets ask for the actual current format */
+	if ((ret = video_get_format(video_dev, &fmt)) != 0) {
+		printk("call to video_get_format failed: %d\n", ret);
+	}
+	printk("After call video_get_format: - Format: %c%c%c%c %ux%u %u\n",   (char)fmt.pixelformat, (char)(fmt.pixelformat >> 8),
+		(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
+		fmt.pitch);
+
+
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
@@ -412,9 +434,9 @@ int initialize_video() {
 		video_enqueue(video_dev, buffers[i]);
 	}
 	
-	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
-	frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
-	#endif
+//	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
+//	frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
+//	#endif
 
 	/* Set controls */
 	struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = 1};
@@ -428,15 +450,15 @@ int initialize_video() {
 		video_set_ctrl(video_dev, &ctrl);
 	}
 
-#ifndef TRY_CAPTURE_SNAPSHOT
-
+#ifdef TRY_CAPTURE_SNAPSHOT
+	video_set_snapshot_mode(video_dev, true);
+#endif	
 	/* Start video capture */
 	printk("Starting  capture\n");
 	if (video_stream_start(video_dev, type)) {
 		printk("ERROR: Unable to start capture (interface)\n") ;
 		return 0;
 	}
-#endif	
 
 	// Lets see if we can call video_get_selection
 #if 1

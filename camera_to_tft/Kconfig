@@ -7,11 +7,11 @@ mainmenu "Video capture to LVGL sample application"
 
 menu "Video capture configuration"
 
-config VIDEO_WIDTH
+config VIDEO_FRAME_WIDTH
 	int "Define the width of the video"
 	default 320
 
-config VIDEO_HEIGHT
+config VIDEO_FRAME_HEIGHT
 	int "Define the height of the video"
 	default 240
 
