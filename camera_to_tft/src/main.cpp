@@ -152,6 +152,11 @@ void writerectCallback(int result) {
 }
 #endif
 
+struct video_selection vselPan = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_CROP};
+
+struct video_selection vselNativeSize = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_NATIVE_SIZE};
+
+
 int main(void)
 {
 
@@ -174,6 +179,26 @@ int main(void)
 	uint32_t write_rect_sum = 0;
 	int sum_count = 0;
 	bool scale_up = false;
+	bool panning_enabled = false;
+
+	int err;
+
+	if ((err = video_get_selection(video_dev, &vselPan)) == 0) {
+		USBSerial.printf("Crop Rect:(%u %u) %ux%u\n", vselPan.rect.left, vselPan.rect.top,
+			vselPan.rect.width, vselPan.rect.height);
+	}
+
+	if ((err = video_get_selection(video_dev, &vselNativeSize)) == 0) {
+		USBSerial.printf("Native size Rect:(%u %u) %ux%u\n", vselNativeSize.rect.left, vselNativeSize.rect.top,
+			vselNativeSize.rect.width, vselNativeSize.rect.height);
+
+	}
+
+	int pan_delta_x = (vselNativeSize.rect.width - vselPan.rect.width) / 4;
+
+	//======================================================================
+	// main loop
+	//======================================================================
 
 	printk("Starting main loop\n");
     for (;;) {
@@ -181,22 +206,24 @@ int main(void)
 			while (USBSerial.read() != -1) {}
 			USBSerial.println("*** Paused ***");
 			int ch;
-			while ((ch = USBSerial.read()) == -1) {} 
+			while ((ch = USBSerial.read()) == -1) {}
 			//if (ch == 'r') {
 			//	print_camera_registers();
 			//}
 			if (ch == 's') {
 				scale_up = !scale_up;
-			}	
+			}
+			if (ch == 'p') {
+				panning_enabled = !panning_enabled;
+			}
 			while (USBSerial.read() != -1) {}
 			continue;
 		}
 
-		int err;
 		frame_count++;
 		uint32_t start_time = micros();
 //		#if defined(TRY_CAPTURE_SNAPSHOT)
-//		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(250)); 
+//		err = video_capture_snapshot(video_dev, frame_buffer, CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT * 2, K_MSEC(250));
 //		static uint8_t dbg_count = 5;
 //		uint32_t delta_time = micros() - start_time;
 //		if (dbg_count || err || (delta_time > 200000)) {
@@ -233,9 +260,9 @@ int main(void)
 #else
 //#if defined(TRY_CAPTURE_SNAPSHOT)
 //		uint16_t *pixels = frame_buffer;
-//#else		
+//#else
         uint16_t *pixels = (uint16_t *) vbuf->buffer;
-//#endif        
+//#endif
         for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
             pixels[i] = __REVSH(pixels[i]);
         }
@@ -270,7 +297,15 @@ int main(void)
 			read_frame_sum = 0;
 			write_rect_sum = 0;
 		}
-
+		if (panning_enabled) {
+			if ((vselPan.rect.left == 0) && (pan_delta_x < 0)) pan_delta_x = -pan_delta_x;
+			if ((vselPan.rect.left + vselPan.rect.width) == vselNativeSize.rect.width)  pan_delta_x = -pan_delta_x;
+			vselPan.rect.left += pan_delta_x;
+			if ((err = video_set_selection(video_dev, &vselPan)) != 0) {
+				USBSerial.printf("Eror setting Crop Rect:(%u %u) %ux%u\n", vselPan.rect.left, vselPan.rect.top,
+					vselPan.rect.width, vselPan.rect.height);
+			}
+		}
   	}
 	return 0;
 }
@@ -287,7 +322,7 @@ void initialize_display() {
 #else
 	tft.begin();
 	tft.setRotation(1);
-#endif	
+#endif
 
 	tft.fillScreen(ILI9341_BLACK);
 	//k_sleep(K_MSEC(500));
@@ -348,7 +383,7 @@ int initialize_video() {
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* four %c to string */
-		printk("INFO:   %c%c%c%c width [%u; %u; %u] height [%u; %u; %u]\n", 
+		printk("INFO:   %c%c%c%c width [%u; %u; %u] height [%u; %u; %u]\n",
 			(char)fcap->pixelformat, (char)(fcap->pixelformat >> 8),
 			(char)(fcap->pixelformat >> 16), (char)(fcap->pixelformat >> 24),
 			fcap->width_min, fcap->width_max, fcap->width_step, fcap->height_min,
@@ -378,7 +413,7 @@ int initialize_video() {
 	printk("Set Video Selection CROP %d %d:\n", CONFIG_VIDEO_SOURCE_CROP_WIDTH, CONFIG_VIDEO_SOURCE_CROP_HEIGHT);
 	struct video_selection vselCrop;
 	vselCrop.type = VIDEO_BUF_TYPE_OUTPUT;
-	vselCrop.target = VIDEO_SEL_TGT_CROP; 
+	vselCrop.target = VIDEO_SEL_TGT_CROP;
 	vselCrop.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
 	vselCrop.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
 	vselCrop.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
@@ -433,7 +468,7 @@ int initialize_video() {
 		buffers[i]->type = type;
 		video_enqueue(video_dev, buffers[i]);
 	}
-	
+
 //	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
 //	frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
 //	#endif
@@ -452,7 +487,7 @@ int initialize_video() {
 
 #ifdef TRY_CAPTURE_SNAPSHOT
 	video_set_snapshot_mode(video_dev, true);
-#endif	
+#endif
 	/* Start video capture */
 	printk("Starting  capture\n");
 	if (video_stream_start(video_dev, type)) {
@@ -465,7 +500,7 @@ int initialize_video() {
 	printk("Get Video Selection:\n");
 	struct video_selection vsel;
 	vsel.type = VIDEO_BUF_TYPE_OUTPUT;
-	vsel.target = VIDEO_SEL_TGT_NATIVE_SIZE; 
+	vsel.target = VIDEO_SEL_TGT_NATIVE_SIZE;
 	if ((ret = video_get_selection(video_dev, &vsel))!= 0) {
 		printk("ERROR: %d\n", ret) ;
 		return 0;
@@ -568,7 +603,7 @@ void print_PinConfig(const char *name, GPIO_TypeDef *port, const char *regName) 
     mask = ((1 << numBits) - 1) << (i*numBits);
     //extractedBits = (value & mask) >> startBit
     uint8_t extractedBits = (reg & mask) >> (i*numBits);
-    USBSerial.print("("); USBSerial.print(i+(hack*8)); USBSerial.print(")"); 
+    USBSerial.print("("); USBSerial.print(i+(hack*8)); USBSerial.print(")");
     USBSerial.print(extractedBits); USBSerial.print(", ");
   }
   USBSerial.println();

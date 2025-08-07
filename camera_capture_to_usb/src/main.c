@@ -251,10 +251,11 @@ int main(void)
 
 	usb_serial_printf("Print to USB Serial\n");
 
+#if CONFIG_VIDEO_BUFFER_POOL_NUM_MAX == 1
+	bool snapshot_mode = true;
+#else
 	bool snapshot_mode = false;
-	if ((err = video_get_snapshot_mode(video_dev, &snapshot_mode))) {
-		LOG_INF("video_get_snapshot_mode failed: %d", err);
-	}
+#endif
 	printk("snapshot_mode: %u\n", snapshot_mode);
 	if (snapshot_mode) {
 		main_loop_snapshot(video_dev, &fmt);

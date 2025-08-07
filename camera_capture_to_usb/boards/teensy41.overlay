@@ -1,0 +1,98 @@
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+/ {
+	chosen {
+		zephyr,camera = &csi;
+	};
+};
+
+&lpuart6 {
+	current-speed = <115200>;
+	status = "okay";
+};
+
+
+
+&pinctrl {
+	/* ADC1 inputs 0 and 15 */
+	pinmux_adc1: pinmux_adc1 {
+		group0 {
+			pinmux = <&iomuxc_gpio_ad_b1_11_adc1_in0>,
+				<&iomuxc_gpio_ad_b1_10_adc1_in15>;
+			bias-disable;
+			drive-strength = "r0-6";
+			slew-rate = "slow";
+			nxp,speed = "100-mhz";
+		};
+	};
+
+	/* conflicts with lpuart3 and flexcan1 */
+	pinmux_csi: pinmux_csi {
+		group0 {
+			pinmux = <&iomuxc_gpio_ad_b1_02_gpio1_io18>;
+			drive-strength = "r0-6";
+			bias-pull-down;
+			bias-pull-down-value = "100k";
+			slew-rate = "slow";
+			nxp,speed = "100-mhz";
+		};
+		group1 {
+			pinmux = <&iomuxc_gpio_ad_b1_04_csi_pixclk>,
+				<&iomuxc_gpio_ad_b1_05_csi_mclk>,
+				<&iomuxc_gpio_ad_b1_06_csi_vsync>,
+				<&iomuxc_gpio_ad_b1_07_csi_hsync>,
+				<&iomuxc_gpio_ad_b1_08_csi_data09>,
+				<&iomuxc_gpio_ad_b1_09_csi_data08>,
+				<&iomuxc_gpio_ad_b1_10_csi_data07>,
+				<&iomuxc_gpio_ad_b1_11_csi_data06>,
+				<&iomuxc_gpio_ad_b1_12_csi_data05>,
+				<&iomuxc_gpio_ad_b1_13_csi_data04>,
+				<&iomuxc_gpio_ad_b1_14_csi_data03>,
+				<&iomuxc_gpio_ad_b1_15_csi_data02>;
+			drive-strength = "r0-6";
+			slew-rate = "slow";
+			nxp,speed = "100-mhz";
+		};
+	};
+};
+
+&csi {
+	status = "okay";
+	pinctrl-0 = <&pinmux_csi>;
+	pinctrl-names = "default";
+
+	port {
+		csi_ep_in: endpoint {
+			remote-endpoint-label = "gc2145_ep_out";
+			bus-width = <4>;
+			hsync-active = <0>;
+			vsync-active = <0>;
+			pclk-sample = <0>;
+		};
+	};
+
+};
+
+
+&lpi2c1 {
+	status = "okay";
+	pinctrl-0 = <&pinmux_lpi2c1>;
+	pinctrl-names = "default";
+
+	gc2145: gc2145@3c {
+		compatible = "galaxycore,gc2145";
+		reg = <0x3c>;
+		status = "okay";
+
+		port {
+			gc2145_ep_out: endpoint {
+				remote-endpoint-label = "csi_ep_in";
+			};
+		};
+	};
+};
