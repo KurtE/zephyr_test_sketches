@@ -12,3 +12,4 @@ extern int usb_serial_availableForWrite();
 extern int usb_serial_peek();
 extern int usb_serial_read_buffer(uint8_t *buffer, size_t size); // currently not like Arduino only what is there...
 extern int usb_serial_read();
+extern bool received_dtr();

@@ -85,6 +85,7 @@ static void interrupt_handler(const struct device *dev, void *data) {
 }
 
 
+uint32_t dtr = 0U;
 
 void init_usb_serial()
 {
@@ -104,9 +105,8 @@ void init_usb_serial()
 	k_sem_init(&_tx_sem, 1, 1);
 	ring_buf_init(&_tx_ringbuf, sizeof(_tx_buffer), _tx_buffer);
 
-	//uint8_t loop_count = 0;
+	uint8_t loop_count = 0;
 	while (true) {
-		uint32_t dtr = 0U;
 
 		uart_line_ctrl_get(usb_uart_dev, UART_LINE_CTRL_DTR, &dtr);
 		if (dtr) {
@@ -116,7 +116,7 @@ void init_usb_serial()
 			k_sleep(K_MSEC(100));
 
 		}
-#if 0
+#if 1
 		loop_count++;
 		if (loop_count > 20) {
 			LOG_WRN("Waiting for DTR timeout");
@@ -158,8 +158,19 @@ void init_usb_serial()
 
 }
 
+
+bool received_dtr() {
+	return dtr != 0;
+}
+
 size_t usb_serial_write_buffer(const uint8_t *buffer, size_t size) {
 	size_t idx = 0;
+
+
+	if (!received_dtr()) {
+		uart_line_ctrl_get(usb_uart_dev, UART_LINE_CTRL_DTR, &dtr);
+		if (!received_dtr()) return 0;
+	}
 
 	while (1) {
 		k_sem_take(&_tx_sem, K_FOREVER);
