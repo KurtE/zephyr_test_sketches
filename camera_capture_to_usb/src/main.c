@@ -484,25 +484,37 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_
         bmpPad[i] = 0;
     }
 
-
+    #define PIX_PER_WRITE 1
 		#ifdef GRAY_IMAGE
     uint8_t *pfb = (uint8_t*)frameBuffer;
     uint8_t *pfbRow = pfb;
-    uint8_t img[3];
+    uint8_t img[3*PIX_PER_WRITE]; // See if it writes out faster
+    uint8_t img_index = 0;
     for (int y = frame_height - 1; y >= 0; y--) {  // iterate image array
         pfb = pfbRow;
         for (int x = 0; x < frame_width; x++) {
             //r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
-            img[2] = *pfb;
-            img[1] = *pfb;
-            img[0] = *pfb;
-            usb_serial_write_buffer(img, 3);
-            k_sleep(K_USEC(8));
+            img[img_index + 2] = *pfb;
+            img[img_index + 1] = *pfb;
+            img[img_index + 0] = *pfb;
+            img_index += 3;
+            if (img_index == sizeof(img)) {
+            	usb_serial_write_buffer(img, img_index);
+            	k_sleep(K_USEC(8));
+            	img_index = 0;
+            }
             pfb++;
+        }
+        if (img_index != 0) {
+        	usb_serial_write_buffer(img, img_index);
+        	k_sleep(K_USEC(8));
+        	img_index = 0;        	
         }
         usb_serial_write_buffer(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
         pfbRow += frame_width;
+        if ((y&0x3) == 0x3) printk("*");
     }
+  	printk("\n");
     #else 
     uint16_t *pfb = frameBuffer;
     uint8_t img[3];
