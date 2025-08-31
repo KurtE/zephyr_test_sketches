@@ -135,7 +135,7 @@ int main(void)
 
 	printf("Hello world\n");
 
-#ifndef CONFIG_HWINFO_IMXRT
+#if 0 //ndef CONFIG_HWINFO_IMXRT
 	pinMode(PC_13, OUTPUT);
 	digitalWrite(PC_13, LOW);
 	delay(10);
@@ -163,8 +163,9 @@ int main(void)
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* fourcc to string */
-		LOG_INF("  %x width [%u; %u; %u] height [%u; %u; %u]",
-			/*VIDEO_FOURCC_TO_STR(fcap->pixelformat) , */ fcap->pixelformat, 
+		LOG_INF(" %c%c%c%c width [%u; %u; %u] height [%u; %u; %u]",
+			(char)fcap->pixelformat, (char)(fcap->pixelformat >> 8),
+			(char)(fcap->pixelformat >> 16), (char)(fcap->pixelformat >> 24),
 			fcap->width_min, fcap->width_max, fcap->width_step,
 			fcap->height_min, fcap->height_max, fcap->height_step);
 		i++;
@@ -178,12 +179,15 @@ int main(void)
 		LOG_ERR("Unable to retrieve video format");
 		return 0;
 	}
-	LOG_INF("video_get_format(1): ret w:%u h:%u", fmt.width, fmt.height);
+	LOG_INF("video_get_format(1): ret w:%u h:%u fmt:%x", fmt.width, fmt.height, fmt.pixelformat);
+
 
 	/* try the order of stuff mentioned by @josuah */
 #ifndef USE_EXAMAPLE_ORDERS
-	LOG_INF("- Video format:  %ux%u",
-		/*VIDEO_FOURCC_TO_STR(fmt.pixelformat), */ fmt.width, fmt.height);
+	LOG_INF("- Video format: %c%c%c%c %ux%u",
+					(char)fmt.pixelformat, (char)(fmt.pixelformat >> 8),
+					(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24),
+					fmt.width, fmt.height);
 
 	if (video_set_format(video_dev, &fmt)) {
 		LOG_ERR("Unable to set format");
@@ -199,6 +203,7 @@ int main(void)
 	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
 #endif
 #endif	
+	fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
 
 	/* First set the format which has the size of the frame defined */
 	LOG_INF("video_set_format: %u %u", fmt.width, fmt.height);
@@ -438,6 +443,7 @@ void main_loop_snapshot(const struct device *video_dev, struct video_format *fmt
 	            	}
 	            	break;
 	            default:
+	            	printk("Unknown Serial CMD: %x\n", ch);
 	            	break;
 	        }
 		}
@@ -601,8 +607,7 @@ void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t 
 	}
 }
 
-//#ifndef CONFIG_HWINFO_IMXRT
-#if 0
+#ifndef CONFIG_HWINFO_IMXRT
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control.h>

@@ -18,33 +18,21 @@
 &i2c3 {
 	status = "okay";
 
-	//gc2145: gc2145@3c {
-	//	compatible = "galaxycore,gc2145";
-	//	reg = <0x3c>;
-	//	status = "okay";
-
-	//	reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
-	//	pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
-
-	//	port {
-	//		gc2145_ep_out: endpoint {
-	//			remote-endpoint-label = "dcmi_ep_in";
-	//		};
-	//	};
-	//};
-
-	hm01b0: hm01b0@24 {
-		compatible = "himax,hm01b0";
-		reg = <0x24>;
+	gc2145: gc2145@3c {
+		compatible = "galaxycore,gc2145";
+		reg = <0x3c>;
 		status = "okay";
-		reset-gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
-		data-bits = <8>;
+
+		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
+
 		port {
-			hm01b0_ep_out: endpoint {
+			gc2145_ep_out: endpoint {
 				remote-endpoint-label = "dcmi_ep_in";
 			};
 		};
 	};
+
 };
 
 &i2c1 {
@@ -81,7 +69,7 @@
 
 	pwm1: pwm {
 		status = "okay";
-		pinctrl-0 = <&tim1_ch1_pk1 &tim1_ch1_pa8 &tim1_ch2_pj11>;
+		pinctrl-0 = <&tim1_ch1_pa8 &tim1_ch2_pj11>;
 		pinctrl-names = "default";
 	};
 };
@@ -156,12 +144,11 @@
 
 	port {
 		dcmi_ep_in: endpoint {
-			//remote-endpoint-label = "gc2145_ep_out";
-			remote-endpoint-label = "hm01b0_ep_out";
+			remote-endpoint-label = "gc2145_ep_out";
 			bus-width = <8>;
 			hsync-active = <0>;
 			vsync-active = <0>;
-			pclk-sample = <1>;
+			pclk-sample = <0>;
 		};
 	};
 };
@@ -170,8 +157,9 @@
 / {
 	chosen {
 		zephyr,camera = &dcmi;
-		zephyr,console = &usart1;
-		zephyr,shell-uart = &usart1;
+		zephyr,console = &usart6;
+		zephyr,shell-uart = &usart6;
+		zephyr,cdc-acm-uart0 = &usart6;
 	};
 
 };
