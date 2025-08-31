@@ -5,8 +5,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
+#include <stdio.h>
+#include <string.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/drivers/clock_control.h>
+
+#include <zephyr/usb/usb_device.h>
+#include <zephyr/usb/usbd.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/input/input.h>
+
 
 #include <zephyr/drivers/video.h>
 #include <zephyr/drivers/video-controls.h>
@@ -16,18 +28,12 @@
 
 #include <zephyr/logging/log.h>
 
-#include "usb_serial.h"
+#include "USBSerialDevice.h"
+
+//#include "usb_serial.h"
 //#define GRAY_IMAGE
 
-#ifdef CONFIG_TEST
-LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
-#else
-LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
-#endif
-
-#if !DT_HAS_CHOSEN(zephyr_camera)
-#error No camera chosen in devicetree. Missing "--shield" or "--snippet video-sw-generator" flag?
-#endif
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 extern void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
 extern void main_loop_continuous(const struct device *video_dev, struct video_format *fmt);
@@ -36,11 +42,10 @@ extern void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t
 extern void send_raw_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height);
 extern void show_all_gpio_regs();
 
-#define F(x) x
-
-
 #ifndef CONFIG_HWINFO_IMXRT
 
+
+extern "C" {
 
 static const struct gpio_dt_spec pin_name_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
 	DT_PATH(zephyr_user), all_pin_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
@@ -104,6 +109,9 @@ PinStatus digitalRead(PinNames pinNumber) {
   return (gpio_pin_get_dt(&pin_name_pins[pinNumber]) == 1) ? HIGH : LOW;
 }
 
+
+} // extern "C"
+
 #endif
 
 #define delay(ms) k_sleep(K_MSEC(ms))
@@ -155,8 +163,8 @@ int main(void)
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* fourcc to string */
-		LOG_INF("  %s width [%u; %u; %u] height [%u; %u; %u]",
-			VIDEO_FOURCC_TO_STR(fcap->pixelformat),
+		LOG_INF("  %x width [%u; %u; %u] height [%u; %u; %u]",
+			/*VIDEO_FOURCC_TO_STR(fcap->pixelformat) , */ fcap->pixelformat, 
 			fcap->width_min, fcap->width_max, fcap->width_step,
 			fcap->height_min, fcap->height_max, fcap->height_step);
 		i++;
@@ -170,12 +178,12 @@ int main(void)
 		LOG_ERR("Unable to retrieve video format");
 		return 0;
 	}
-	LOG_INF("video_get_format(1): ret fmt:%s w:%u h:%u",VIDEO_FOURCC_TO_STR(fmt.pixelformat), fmt.width, fmt.height);
+	LOG_INF("video_get_format(1): ret w:%u h:%u", fmt.width, fmt.height);
 
 	/* try the order of stuff mentioned by @josuah */
 #ifndef USE_EXAMAPLE_ORDERS
-	LOG_INF("- Video format: %s %ux%u",
-		VIDEO_FOURCC_TO_STR(fmt.pixelformat), fmt.width, fmt.height);
+	LOG_INF("- Video format:  %ux%u",
+		/*VIDEO_FOURCC_TO_STR(fmt.pixelformat), */ fmt.width, fmt.height);
 
 	if (video_set_format(video_dev, &fmt)) {
 		LOG_ERR("Unable to set format");
@@ -224,7 +232,7 @@ int main(void)
 		LOG_ERR("Unable to retrieve video format");
 		return 0;
 	}
-	LOG_INF("video_get_format(2): ret fmt:%s w:%u h:%u pitch:%u", VIDEO_FOURCC_TO_STR(fmt.pixelformat), fmt.width, fmt.height, fmt.pitch);
+	LOG_INF("video_get_format(2): ret fmt:%x w:%u h:%u pitch:%u", /*VIDEO_FOURCC_TO_STR(fmt.pixelformat), */ fmt.pixelformat ,fmt.width, fmt.height, fmt.pitch);
 	bsize = fmt.height *fmt.pitch;
 
 
@@ -336,9 +344,9 @@ int main(void)
 
 	LOG_INF("Capture started");
 
-	init_usb_serial();
-
-	usb_serial_printf("Print to USB Serial\n");
+	USBSerial.begin();
+	//SerialX.begin();
+	USBSerial.println("Camera capture to USB...");
 
 #if CONFIG_VIDEO_BUFFER_POOL_NUM_MAX == 1
 	bool snapshot_mode = true;
@@ -355,7 +363,7 @@ int main(void)
 
 
 void main_loop_continuous(const struct device *video_dev, struct video_format *fmt) {
-	struct video_buffer *vbuf = &(struct video_buffer){};
+	struct video_buffer *vbuf = nullptr;
 	int err;
 	unsigned int frame = 0;
 	uint32_t loop_count = 0;
@@ -381,20 +389,20 @@ void main_loop_continuous(const struct device *video_dev, struct video_format *f
 }
 
 void main_loop_snapshot(const struct device *video_dev, struct video_format *fmt) {
-	struct video_buffer *vbuf = &(struct video_buffer){};
+	struct video_buffer *vbuf = nullptr;
 	int err;
 	unsigned int frame = 0;
 
 	int ch;
 	while (1) {
-		while ((ch = usb_serial_read()) != -1) {
+		while ((ch =  USBSerial.read()) != -1) {
 			switch(ch) {
 	            case 0x10:
 	                {
 	                	printk("Send JPEG: %u %u - Not supported\n", fmt->width, fmt->height);
-	                    usb_serial_printf("NAK CMD CAM start jpg single shoot. END");
+	                     USBSerial.printf("NAK CMD CAM start jpg single shoot. END");
 	                    //send_jpeg();
-	                    usb_serial_printf("READY. END");
+	                     USBSerial.printf("READY. END");
 	                }
 	                break;
 	            case 0x30:
@@ -410,9 +418,9 @@ void main_loop_snapshot(const struct device *video_dev, struct video_format *fmt
 						LOG_DBG("Got frame %u! size: %u; timestamp %u ms",
 							frame++, vbuf->bytesused, vbuf->timestamp);
 
-	                    usb_serial_printf(F("ACK CMD CAM start single shoot ... "));
+	                     USBSerial.printf("ACK CMD CAM start single shoot ... ");
 	                    send_image(vbuf, fmt->width, fmt->height);
-	                    usb_serial_printf(F("READY. END"));
+	                     USBSerial.printf("READY. END");
 						err = video_enqueue(video_dev, vbuf);
 	                }
 	                break;
@@ -455,8 +463,8 @@ inline uint16_t HTONS(uint16_t x) {
 
 void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height)
 {
-    usb_serial_write(0xFF);
-    usb_serial_write(0xAA);
+     USBSerial.write(0xFF);
+     USBSerial.write(0xAA);
 
     uint16_t *frameBuffer = (uint16_t*)vbuf->buffer;
 
@@ -482,8 +490,8 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_
     bmpInfoHeader[11] = (unsigned char)(frame_height >> 24);
 
 
-    usb_serial_write_buffer(bmpFileHeader, sizeof(bmpFileHeader));  // write file header
-    usb_serial_write_buffer(bmpInfoHeader, sizeof(bmpInfoHeader));  // " info header
+     USBSerial.write(bmpFileHeader, sizeof(bmpFileHeader));  // write file header
+     USBSerial.write(bmpInfoHeader, sizeof(bmpInfoHeader));  // " info header
 
     unsigned char bmpPad[rowSize - 3 * frame_width];
     for (int i = 0; i < (int)(sizeof(bmpPad)); i++) {  // fill with 0s
@@ -505,18 +513,18 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_
             img[img_index + 0] = *pfb;
             img_index += 3;
             if (img_index == sizeof(img)) {
-            	usb_serial_write_buffer(img, img_index);
+            	 USBSerial.write(img, img_index);
             	k_sleep(K_USEC(8));
             	img_index = 0;
             }
             pfb++;
         }
         if (img_index != 0) {
-        	usb_serial_write_buffer(img, img_index);
+        	 USBSerial.write(img, img_index);
         	k_sleep(K_USEC(8));
         	img_index = 0;        	
         }
-        usb_serial_write_buffer(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
+         USBSerial.write(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
         pfbRow += frame_width;
         if ((y&0x3) == 0x3) printk("*");
     }
@@ -532,18 +540,18 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_
             img[2] = (pixel >> 8) & 0xf8;  // r
             img[1] = (pixel >> 3) & 0xfc;  // g
             img[0] = (pixel << 3);         // b
-            usb_serial_write_buffer(img, 3);
+             USBSerial.write(img, 3);
             k_sleep(K_USEC(8));
 
         }
-        usb_serial_write_buffer(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
+         USBSerial.write(bmpPad, (4 - (frame_width * 3) % 4) % 4);  // and padding as needed
     }
     #endif
 
-    usb_serial_write(0xBB);
-    usb_serial_write(0xCC);
+     USBSerial.write(0xBB);
+     USBSerial.write(0xCC);
 
-    usb_serial_printf(F("ACK CMD CAM Capture Done. END\n"));
+     USBSerial.printf("ACK CMD CAM Capture Done. END\n");
     //camera.setHmirror(0);
 
     k_sleep(K_MSEC(50));
@@ -557,7 +565,7 @@ void send_raw_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t fr
 
 	while (cb) {
 		if (cb < 512) cb_write = 512;
-		size_t cb_written = usb_serial_write_buffer(pb, cb_write);
+		size_t cb_written =  USBSerial.write(pb, cb_write);
 		if (!cb_written) {
 			printk("Failed to write buffer");
 			break;
@@ -568,22 +576,22 @@ void send_raw_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t fr
 
 void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t frame_height) {
 	int ch;
-	while ((ch = usb_serial_read()) != -1) {
+	while ((ch =  USBSerial.read()) != -1) {
 		switch(ch) {
             case 0x10:
                 {
                 	printk("Send JPEG: %u %u - Not supported\n", frame_width, frame_height);
-                    usb_serial_printf("NAK CMD CAM start jpg single shoot. END");
+                     USBSerial.printf("NAK CMD CAM start jpg single shoot. END");
                     //send_jpeg();
-                    usb_serial_printf("READY. END");
+                     USBSerial.printf("READY. END");
                 }
                 break;
             case 0x30:
                 {
                 	printk("Send BMP: %u %u\n", frame_width, frame_height);
-                    usb_serial_printf(F("ACK CMD CAM start single shoot ... "));
+                     USBSerial.printf("ACK CMD CAM start single shoot ... ");
                     send_image(vbuf, frame_width, frame_height);
-                    usb_serial_printf(F("READY. END"));
+                     USBSerial.printf("READY. END");
                 }
                 break;
             default:
@@ -675,12 +683,12 @@ void print_gpio_regs(const char *name, GPIO_TypeDef *port) {
 }
 
 void print_PinConfig(const char *name, GPIO_TypeDef *port, const char *regName) {
-  uint8_t buffer[80];	
+  char buffer[80];	
   uint32_t reg = 0;
   uint8_t numPins = 0;
   uint8_t numBits = 0;
   uint8_t hack = 0;
-  sprintf(buffer, "GPIO %s ", name);
+  sprintf((char*)buffer, "GPIO %s ", name);
   if(strcmp(regName, "M") == 0) {
     strcat(buffer, "MODER: ");
     numPins = 16;
@@ -708,7 +716,7 @@ void print_PinConfig(const char *name, GPIO_TypeDef *port, const char *regName) 
     mask = ((1 << numBits) - 1) << (i*numBits);
     //extractedBits = (value & mask) >> startBit
     //uint8_t extractedBits = (reg & mask) >> (i*numBits);
-    uint8_t buffer2[10];
+    char buffer2[10];
     sprintf(buffer2, "(%u)", i+(hack*8));
     strcat(buffer, buffer2);
   }

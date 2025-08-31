@@ -35,8 +35,10 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 #include "XPT2046_Touchscreen.h"
 
+#ifndef CONFIG_BOARD_TEENSY41
 #define ATP
 //#define PJRC
+#endif
 
 const struct device *const usb_uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 //const struct device *const serial_dev = DEVICE_DT_GET(DT_CHOSEN(uart_passthrough));
@@ -177,7 +179,7 @@ int main(void)
 //  		USBSerial.printf("%u %p %u\n", i, connector_pins[i].port, connector_pins[i].pin);
 //  	}
   	// Main loop, would be nice if we setup events for the two RX queues, but startof KISS
-#if 0
+#if 1
 	USBSerial.printf("cs: %p %u %x\n", ili9341_pins[0].port, ili9341_pins[0].pin, ili9341_pins[0].dt_flags);
 	USBSerial.printf("dc: %p %u %x\n", ili9341_pins[1].port, ili9341_pins[1].pin, ili9341_pins[1].dt_flags);
 	USBSerial.printf("rst: %p %u %x\n",ili9341_pins[2].port, ili9341_pins[2].pin, ili9341_pins[2].dt_flags);
@@ -194,11 +196,14 @@ int main(void)
 
 
 	tft.setDebugUART(&USBSerial);
+	printk("Before tft.begin\n");
 	tft.begin();
 	tft.setRotation(0);
 
+	printk("Before ts.begin()\n");
 	ts.begin();
 
+	printk("Before fill screen calls\n");
 	tft.fillScreen(ILI9341_BLACK);
 	k_sleep(K_MSEC(500));
 	tft.fillScreen(ILI9341_RED);

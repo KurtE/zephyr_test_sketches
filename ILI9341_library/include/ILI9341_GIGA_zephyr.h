@@ -333,6 +333,10 @@ public:
   void writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h,
                      const uint8_t *pixels, const uint16_t *palette);
 
+  // hack version camera returns 8 bits at a time
+  void writeRect8BPP_4BITB(int16_t x, int16_t y, int16_t w, int16_t h,
+                     const uint16_t *pixels, const uint16_t *palette);
+
   // writeRect4BPP - 	write 4 bit per pixel paletted bitmap
   //					bitmap data in array at pixels, 4 bits per
   //pixel

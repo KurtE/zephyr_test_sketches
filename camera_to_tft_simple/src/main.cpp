@@ -734,7 +734,7 @@ void print_PinConfig(const char *name, GPIO_TypeDef *port, const char *regName) 
     //mask = ((1 << numBits2Extract) << startBit)
     mask = ((1 << numBits) - 1) << (i*numBits);
     //extractedBits = (value & mask) >> startBit
-    uint8_t extractedBits = (reg & mask) >> (i*numBits);
+    //uint8_t extractedBits = (reg & mask) >> (i*numBits);
     USBSerial.print("("); USBSerial.print(i+(hack*8)); USBSerial.print(")");
     USBSerial.print(extractedBits); USBSerial.print(", ");
   }

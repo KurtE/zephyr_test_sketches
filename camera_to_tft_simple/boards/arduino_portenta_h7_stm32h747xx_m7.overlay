@@ -39,7 +39,7 @@
 		status = "okay";
 		reset-gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
-		data-bits = <4>;
+		data-bits = <1>;
 		port {
 			hm01b0_ep_out: endpoint {
 				remote-endpoint-label = "dcmi_ep_in";

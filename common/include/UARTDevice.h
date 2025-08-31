@@ -62,6 +62,8 @@ public:
 	int read(uint8_t *buffer, size_t size); // currently not like Arduino only what is there...
 	int read();
 
+	virtual operator bool() {return true; }
+
 
 	uint8_t _rx_buffer[RX_BUFFER_SIZE];
 	struct ring_buf _rx_ringbuf;

@@ -157,10 +157,47 @@ struct video_selection vselPan = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_CROP};
 struct video_selection vselNativeSize = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_NATIVE_SIZE};
 
 
+////////////////////////////////
+#define LED0_NODE DT_ALIAS(led0)
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+
+////////////////////////////
+void blink_led(uint32_t sleep_time, uint32_t count) {
+	int ret;
+	bool led_state = true;
+
+	static bool led_initialized = false;
+
+	if (!led_initialized) {
+		if (!gpio_is_ready_dt(&led)) {
+			return;
+		}
+
+		ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+		if (ret < 0) {
+			return;
+		}
+		led_initialized = true;
+	}
+	while (count) {
+		gpio_pin_toggle_dt(&led);
+		led_state = !led_state;
+		k_msleep(sleep_time);
+		gpio_pin_toggle_dt(&led);
+		led_state = !led_state;
+		k_msleep(sleep_time);
+		count--;
+	}
+}
+
+
 int main(void)
 {
 
-	int ret;
+	
+	blink_led(500, 1);
 
 	// Start up the Serial
 	USBSerial.begin();
@@ -485,9 +522,9 @@ int initialize_video() {
 		video_set_ctrl(video_dev, &ctrl);
 	}
 
-#ifdef TRY_CAPTURE_SNAPSHOT
-	video_set_snapshot_mode(video_dev, true);
-#endif
+//#ifdef TRY_CAPTURE_SNAPSHOT
+//	video_set_snapshot_mode(video_dev, true);
+//#endif
 	/* Start video capture */
 	printk("Starting  capture\n");
 	if (video_stream_start(video_dev, type)) {
