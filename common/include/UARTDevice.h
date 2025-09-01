@@ -22,7 +22,7 @@ public:
 		ring_buf_init(&_tx_ringbuf, sizeof(_tx_buffer), _tx_buffer);
 	}
 
-	enum {RX_BUFFER_SIZE=512, TX_BUFFER_SIZE=512};
+	enum {RX_BUFFER_SIZE=64, TX_BUFFER_SIZE=64};
 
 
 	void begin(); // currently using the information from the device tree
