@@ -797,7 +797,7 @@ SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRI
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+Z_GENERIC_SECTION(SDRAM1) static uint8_t __aligned(32) smh_pool[4*1024*1024];
 
 int smh_init(void) {
     int ret = 0;

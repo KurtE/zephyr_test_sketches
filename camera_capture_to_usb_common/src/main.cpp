@@ -37,6 +37,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
 
+inline unsigned long millis(void) { return k_uptime_get_32(); }
 
 extern void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width,
                              uint16_t frame_height);
@@ -132,6 +133,7 @@ PinStatus digitalRead(PinNames pinNumber) {
 int main(void) {
   // struct video_buffer *vbuf = &(struct video_buffer){};
   const struct device *video_dev;
+  int ret;
   struct video_format fmt;
   struct video_caps caps;
   enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
@@ -158,7 +160,12 @@ int main(void) {
   video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
   if (!device_is_ready(video_dev)) {
     LOG_ERR("%s: video device is not ready", video_dev->name);
-    return 0;
+    if ((ret = device_init(video_dev)) < 0) {
+      LOG_ERR("device_init camera(%p) failed:%d\n", video_dev, ret);
+      return 0;
+    }
+
+    //return 0;
   }
 
   LOG_INF("Video device: %s", video_dev->name);
@@ -170,7 +177,8 @@ int main(void) {
     return 0;
   }
 
-  LOG_INF("- Capabilities:");
+  LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
+          caps.min_line_count, caps.max_line_count);
   while (caps.format_caps[i].pixelformat) {
     const struct video_format_cap *fcap = &caps.format_caps[i];
     /* fourcc to string */
@@ -441,6 +449,7 @@ void main_loop_snapshot(const struct device *video_dev,
   struct video_buffer *vbuf = nullptr;
   int err;
   unsigned int frame = 0;
+  bool continuous_send = false;
 
   int ch;
   while (1) {
@@ -452,6 +461,13 @@ void main_loop_snapshot(const struct device *video_dev,
         // send_jpeg();
         USBSerial.printf("READY. END");
       } break;
+      case 0x20: 
+        continuous_send = true;
+        break;
+      case 0x21: 
+        continuous_send = false;
+        break;
+
       case 0x30: {
         printk("Send BMP: %u %u\n", fmt->width, fmt->height);
 
@@ -494,7 +510,30 @@ void main_loop_snapshot(const struct device *video_dev,
         break;
       }
     }
-    k_sleep(K_MSEC(50));
+    if (continuous_send) {
+      printk("Send BMP: %u %u ", fmt->width, fmt->height);
+      uint32_t start_time = millis();
+      err = video_dequeue(video_dev, &vbuf, K_FOREVER);
+      if (err) {
+        LOG_ERR("Unable to dequeue video buf");
+        continue;
+        }
+        uint32_t camera_time = millis();
+
+        LOG_DBG("Got frame %u! size: %u; timestamp %u ms", frame++,
+                vbuf->bytesused, vbuf->timestamp);
+
+        USBSerial.printf("ACK CMD CAM start single shoot ... ");
+        send_image(vbuf, fmt->width, fmt->height);
+        uint32_t send_image_time = millis();
+        printk(" %u %u\n", camera_time - start_time, send_image_time - camera_time);
+
+        USBSerial.printf("READY. END");
+        err = video_enqueue(video_dev, vbuf);
+
+    } else {
+      k_sleep(K_MSEC(50));
+    }
   }
 }
 
@@ -550,7 +589,7 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width,
     bmpPad[i] = 0;
   }
 
-#define PIX_PER_WRITE 1
+#define PIX_PER_WRITE 20
 #ifdef GRAY_IMAGE
   uint8_t *pfb = (uint8_t *)frameBuffer;
   uint8_t *pfbRow = pfb;
@@ -674,17 +713,20 @@ int camera_ext_clock_enable(void) {
   const struct device *cam_ext_clk_dev = DEVICE_DT_GET(DT_NODELABEL(pwmclock));
 
   if (!device_is_ready(cam_ext_clk_dev)) {
+    LOG_ERR("Clock start failed - ready");
     return -ENODEV;
   }
 
   ret = clock_control_on(cam_ext_clk_dev, (clock_control_subsys_t)0);
   if (ret < 0) {
+    LOG_ERR("Clock start failed - clock_control_on");
     return ret;
   }
 
   ret =
       clock_control_get_rate(cam_ext_clk_dev, (clock_control_subsys_t)0, &rate);
   if (ret < 0) {
+    LOG_ERR("Clock start failed - get_rate");
     return ret;
   }
 
@@ -699,7 +741,7 @@ SYS_INIT(camera_ext_clock_enable, POST_KERNEL,
 #if defined(CONFIG_SHARED_MULTI_HEAP)
 #include <zephyr/multi_heap/shared_multi_heap.h>
 
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4 * 1024 * 1024];
+Z_GENERIC_SECTION(SDRAM1) static uint8_t __aligned(32) smh_pool[4 * 1024 * 1024];
 
 int smh_init(void) {
   int ret = 0;

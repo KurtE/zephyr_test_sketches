@@ -10,10 +10,10 @@
 //	};
 //};
 
-zephyr_udc0: &usbotg_hs {
-	status = "okay";
-	cdc_acm_uart0: cdc_acm_uart0 {
+&zephyr_udc0 {
+	board_cdc_acm_uart: board_cdc_acm_uart {
 		compatible = "zephyr,cdc-acm-uart";
+	status = "okay";
 	};
 };
 
@@ -49,3 +49,18 @@ zephyr_udc0: &usbotg_hs {
 	};
 };
 
+&rng {
+	status = "okay";
+};
+
+&dmamux1 {
+	status = "okay";
+};
+
+&dma1 {
+	status = "okay";
+};
+
+&usbotg_hs  {
+	status = "okay";
+};

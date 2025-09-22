@@ -3,7 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#define DEFER_INIT_CAMERA
+#define USE_CAMERA_LISTS
 /**
  * @file
  * @brief Sample echo app for CDC ACM class
@@ -96,6 +97,12 @@ unsigned long micros(void) {
 #endif
  }
 
+extern "C" {
+	extern int camera_ext_clock_enable(void);
+}
+
+
+
 #if defined(ATP)
 static const struct gpio_dt_spec generic_tft_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341atp_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
@@ -123,7 +130,7 @@ const struct device *video_dev;
 extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
-extern int initialize_video();
+extern int initialize_video(uint8_t camera_index = 0);
 extern void	draw_scaled_up_image(uint16_t *pixels);
 
 #if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_FRAME_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_FRAME_HEIGHT)
@@ -270,7 +277,7 @@ int main(void)
 //		}
 //		if (err) continue;
 //		#else
-		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
+		err = video_dequeue(video_dev, &vbuf, K_MSEC(250/*10000*/));
 		read_frame_sum += (micros() - start_time);
 		//printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
@@ -389,10 +396,44 @@ void initialize_display() {
 
 }
 
+#ifdef USE_CAMERA_LISTS
+#if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
+//#warning "cameras defined"
+
+#define COUNT_DT_CAMERAS DT_PROP_LEN(DT_PATH(zephyr_user), cameras)
+
+#define DECLARE_CAMERA_N(n, p, i) DEVICE_DT_GET(DT_PHANDLE_BY_IDX(n, p, i)),                                                                     \
+
+/* Declare SPI, SPI1, SPI2, ... */
+const struct device *const dt_camera_sensors[] = {
+	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), cameras, DECLARE_CAMERA_N)
+};
+
+#undef DECLARE_CAMERA_N
+#endif
+
+
+#if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
+//#warning "dcims defined"
+
+#define COUNT_DT_DCMIS DT_PROP_LEN(DT_PATH(zephyr_user), dcmis)
+
+#define DECLARE_DCMIS_N(n, p, i) DEVICE_DT_GET(DT_PHANDLE_BY_IDX(n, p, i)),                                                                     \
+
+/* Declare SPI, SPI1, SPI2, ... */
+const struct device *const dt_dcmis[] = {
+	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), dcmis, DECLARE_DCMIS_N)
+};
+
+#undef DECLARE_CAMERA_N
+
+#endif
+#endif
+
 //----------------------------------------------------------------------------------
 // iniitialize the camera/video
 //----------------------------------------------------------------------------------
-int initialize_video() {
+int initialize_video(uint8_t camera_index) {
 	struct video_format fmt;
 	struct video_caps caps;
 	enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
@@ -400,11 +441,39 @@ int initialize_video() {
 	int i = 0;
 	int ret = 0;
 
+#ifdef DEFER_INIT_CAMERA
+	camera_ext_clock_enable();
+#endif
+
 	// lets get camera information
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
+	video_dev = dt_dcmis[camera_index];
+
+#elif DT_HAS_CHOSEN(zephyr_camera)
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
+#endif
 	if (!device_is_ready(video_dev)) {
 		printk("ERROR: %s device is not ready\n",  video_dev->name);
-		return 0;
+
+		if ((ret = device_init(video_dev)) < 0) {
+			printk("device_init camera(%p) failed:%d\n", video_dev, ret);
+			return 0;
+		}
+	}
+
+	const struct device *dcmi = nullptr;
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
+	dcmi = dt_camera_sensors[camera_index];
+#elif DT_HAS_CHOSEN(zephyr_camera_sensor)
+	dcmi = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera_sensor));
+#endif
+	if (dcmi) {
+		if (!device_is_ready(dcmi)) {
+			if ((ret = device_init(dcmi)) < 0) {
+				printk("device_init camera sensor(%p) failed:%d\n", dcmi, ret);
+				return false;
+			}
+		}
 	}
 
 	printk("INFO: - Device name: %s\n",  video_dev->name);
@@ -416,7 +485,17 @@ int initialize_video() {
 		return 0;
 	}
 
-	printk("INFO: - Capabilities:\n") ;
+	/* lets see if we can set snapshot mode */
+#if defined(VIDEO_CID_SNAPSHOT_MODE)
+	printk("Try to set Snapshot mode...\n");
+	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 1};
+	if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
+		printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
+	}
+#endif
+
+  	LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
+	          caps.min_line_count, caps.max_line_count);
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* four %c to string */
@@ -427,6 +506,7 @@ int initialize_video() {
 			fcap->height_max, fcap->height_step);
 		i++;
 	}
+
 
 	/* Get default/native format */
 	fmt.type = type;
@@ -473,6 +553,7 @@ int initialize_video() {
 		printk("ERROR: Partial framebuffers not supported by this sample\n") ;
 		return 0;
 	}
+
 	/* Size to allocate for each buffer */
 	/* lets ask for the actual current format */
 	if ((ret = video_get_format(video_dev, &fmt)) != 0) {
@@ -503,7 +584,9 @@ int initialize_video() {
 			return 0;
 		}
 		buffers[i]->type = type;
-		video_enqueue(video_dev, buffers[i]);
+		if (video_enqueue(video_dev, buffers[i]) < 0) {
+			printk("Error video_enqueue(%p %p)\n", video_dev, buffers[i]);
+		}
 	}
 
 //	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
@@ -697,12 +780,14 @@ int camera_ext_clock_enable(void)
 	return 0;
 }
 
+#ifndef DEFER_INIT_CAMERA
 SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
+#endif
 
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+Z_GENERIC_SECTION(SDRAM1) static uint8_t __aligned(32) smh_pool[4*1024*1024];
 
 int smh_init(void) {
     int ret = 0;

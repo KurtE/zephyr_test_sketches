@@ -21,6 +21,7 @@
 	gc2145: gc2145@3c {
 		compatible = "galaxycore,gc2145";
 		reg = <0x3c>;
+		zephyr,deferred-init;
 		status = "okay";
 
 		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
@@ -33,6 +34,21 @@
 		};
 	};
 
+//	ov7670: ov7670@21 {
+//		compatible = "ovti,ov7670";
+//		status = "okay";
+//		reg = <0x21>;
+//		zephyr,deferred-init;
+//
+//		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
+//		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
+//
+//		port {
+//			ov7670_ep_out: endpoint {
+//				remote-endpoint-label = "dcmi2_ep_in";
+//			};
+//		};
+//	};
 };
 
 &i2c1 {
@@ -133,6 +149,7 @@
 
 &dcmi {
 	status = "okay";
+	zephyr,deferred-init;
 	/* ext-sdram = <&sdram1>; */
 	pinctrl-0 = <&dcmi_hsync_pa4 &dcmi_pixclk_pa6 &dcmi_vsync_pi5
 		     &dcmi_d0_ph9 &dcmi_d1_ph10 &dcmi_d2_ph11 &dcmi_d3_ph12
@@ -145,6 +162,7 @@
 	port {
 		dcmi_ep_in: endpoint {
 			remote-endpoint-label = "gc2145_ep_out";
+			// remote-endpoint-label = "ov7670_ep_out";
 			bus-width = <8>;
 			hsync-active = <0>;
 			vsync-active = <0>;
@@ -153,10 +171,43 @@
 	};
 };
 
+/// {
+//	soc {
+//		dcmi2: dcmi2@48020000 {
+//			status = "okay";
+//			compatible = "st,stm32-dcmi";
+//				reg = <0x48020000 0x400>;
+//				interrupts = <78 0>;
+//				interrupt-names = "dcmi";
+//				clocks = <&rcc STM32_CLOCK(AHB2, 0U)>;
+//				dmas = <&dma1 0 75 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PERIPH_NO_INC |
+//					STM32_DMA_MEM_INC | STM32_DMA_PERIPH_8BITS | STM32_DMA_MEM_32BITS |
+//					STM32_DMA_PRIORITY_HIGH) STM32_DMA_FIFO_1_4>;
+//			zephyr,deferred-init;
+//			pinctrl-0 = <&dcmi_hsync_pa4 &dcmi_pixclk_pa6 &dcmi_vsync_pi5
+//				     &dcmi_d0_ph9 &dcmi_d1_ph10 &dcmi_d2_ph11 &dcmi_d3_ph12
+//				     &dcmi_d4_ph14 &dcmi_d5_pi4 &dcmi_d6_pi6 &dcmi_d7_pi7>;
+//			pinctrl-names = "default";
+//
+//			port {
+//				dcmi2_ep_in: endpoint {
+//					remote-endpoint-label = "ov7670_ep_out";
+//					bus-width = <8>;
+//					hsync-active = <0>;
+//					vsync-active = <0>;
+//					pclk-sample = <0>;
+//				};
+//			};
+//		};
+//	};
+//};
+
+
 
 / {
 	chosen {
 		zephyr,camera = &dcmi;
+		zephyr,camera-sensor = &gc2145;
 		zephyr,console = &usart6;
 		zephyr,shell-uart = &usart6;
 		zephyr,cdc-acm-uart0 = &usart6;
@@ -167,10 +218,9 @@
 
 / {
 	zephyr,user {
-		builtin-led-gpios = <&gpiok 5 0>,
-				    <&gpiok 6 0>,
-				    <&gpiok 7 0>;
-
+		builtin-led-gpios = <&gpiok 5 0>, <&gpiok 6 0>, <&gpiok 7 0>;
+//		cameras = <&gc2145>,<&ov7670>;
+//		dcmis = <&dcmi>,<&dcmi2>;
 	};
 };
 
