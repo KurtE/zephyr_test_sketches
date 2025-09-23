@@ -454,6 +454,7 @@ void main_loop_snapshot(const struct device *video_dev,
   int ch;
   while (1) {
     while ((ch = USBSerial.read()) != -1) {
+      printk("Serial command: %x\n", ch);
       switch (ch) {
       case 0x10: {
         printk("Send JPEG: %u %u - Not supported\n", fmt->width, fmt->height);
@@ -488,7 +489,7 @@ void main_loop_snapshot(const struct device *video_dev,
       case 1: {
         // Hack lets try sending raw file
         #ifdef RAW_TEST_MODE
-        printk("send text image\n");
+        printk("send test image\n");
         vbuf = buffers[0];
         create_test_image(vbuf, fmt->width, fmt->height);
         send_raw_image(vbuf, fmt->width, fmt->height);
@@ -695,6 +696,11 @@ void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width,
       send_image(vbuf, frame_width, frame_height);
       USBSerial.printf("READY. END");
     } break;
+
+  case 0x1:
+      send_raw_image(vbuf, frame_width, frame_height);
+      break;
+        
     default:
       break;
     }
