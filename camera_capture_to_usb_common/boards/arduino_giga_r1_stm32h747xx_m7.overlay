@@ -1,14 +1,21 @@
-&zephyr_udc0 {
-	board_cdc_acm_uart: board_cdc_acm_uart {
-		compatible = "zephyr,cdc-acm-uart";
-	status = "okay";
+//&zephyr_udc0 {
+//	board_cdc_acm_uart: board_cdc_acm_uart {
+//		compatible = "zephyr,cdc-acm-uart";
+//	status = "okay";
+//	};
+//};
+//
+//&board_cdc_acm_uart {
+//	status = "okay";
+//};
+//
+
+/ {
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 	};
 };
-
-&board_cdc_acm_uart {
-	status = "okay";
-};
-
 
 &usart1 {
 	status = "okay";
