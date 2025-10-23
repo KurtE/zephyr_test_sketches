@@ -16,10 +16,6 @@
 
 #ifdef CONFIG_USB_DEVICE_STACK_NEXT
 
-#include <zephyr/usb/usbd.h>
-struct usbd_context *usbd_init_device(usbd_msg_cb_t msg_cb);
-
-
 /* By default, do not register the USB DFU class DFU mode instance. */
 static const char *const blocklist[] = {
 	"dfu_dfu",

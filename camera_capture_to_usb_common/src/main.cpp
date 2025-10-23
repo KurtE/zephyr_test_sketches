@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 //#define RAW_TEST_MODE
+//#define TRY_SNAPSHOT
 
 #include <stdio.h>
 #include <string.h>
@@ -31,11 +32,9 @@
 #include "USBSerialDevice.h"
 
 // #include "usb_serial.h"
-// #define GRAY_IMAGE
+#define GRAY_IMAGE
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
-
-struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
 
 inline unsigned long millis(void) { return k_uptime_get_32(); }
 
@@ -43,13 +42,19 @@ extern void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width,
                              uint16_t frame_height);
 extern void main_loop_continuous(const struct device *video_dev,
                                  struct video_format *fmt);
+#ifdef TRY_SNAPSHOT
 extern void main_loop_snapshot(const struct device *video_dev,
                                struct video_format *fmt);
+#endif
 extern void send_image(struct video_buffer *vbuf, uint16_t frame_width,
                        uint16_t frame_height);
 extern void send_raw_image(struct video_buffer *vbuf, uint16_t frame_width,
                            uint16_t frame_height);
 extern void show_all_gpio_regs();
+
+extern int initialize_video(uint8_t camera_index = 0);
+
+
 
 #ifndef CONFIG_HWINFO_IMXRT
 
@@ -130,251 +135,30 @@ PinStatus digitalRead(PinNames pinNumber) {
 
 #define delay(ms) k_sleep(K_MSEC(ms))
 
+// Camera/Video global variables.
+struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
+struct video_buffer *vbuf = nullptr;
+const struct device *video_dev;
+struct video_format fmt;
+
+
+//----------------------------------------------------------------------------------
+// iniitialize the camera/video
+//----------------------------------------------------------------------------------
 int main(void) {
-  // struct video_buffer *vbuf = &(struct video_buffer){};
-  const struct device *video_dev;
-  int ret;
-  struct video_format fmt;
-  struct video_caps caps;
-  enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
-#if (CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT)
-  struct video_selection sel = {
-      .type = VIDEO_BUF_TYPE_OUTPUT,
-  };
-#endif
-  // unsigned int frame = 0;
-  size_t bsize;
-  int i = 0;
 
-  printf("Hello world\n");
+  // Start up the Serial
+  USBSerial.begin();
+  //SerialX.begin();
+  USBSerial.println("Camera capture to USB...");
 
-#if 0 // ndef CONFIG_HWINFO_IMXRT
-	pinMode(PC_13, OUTPUT);
-	digitalWrite(PC_13, LOW);
-	delay(10);
-	digitalWrite(PC_13, HIGH);
-	delay(10);
-
-	show_all_gpio_regs();
-#endif
-  video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
-  if (!device_is_ready(video_dev)) {
-    LOG_ERR("%s: video device is not ready", video_dev->name);
-    if ((ret = device_init(video_dev)) < 0) {
-      LOG_ERR("device_init camera(%p) failed:%d\n", video_dev, ret);
-      return 0;
-    }
-
-    //return 0;
-  }
-
-  LOG_INF("Video device: %s", video_dev->name);
-
-  /* Get capabilities */
-  caps.type = type;
-  if (video_get_caps(video_dev, &caps)) {
-    LOG_ERR("Unable to retrieve video capabilities");
-    return 0;
-  }
-
-  LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
-          caps.min_line_count, caps.max_line_count);
-  while (caps.format_caps[i].pixelformat) {
-    const struct video_format_cap *fcap = &caps.format_caps[i];
-    /* fourcc to string */
-    LOG_INF(" %c%c%c%c width [%u; %u; %u] height [%u; %u; %u]",
-            (char)fcap->pixelformat, (char)(fcap->pixelformat >> 8),
-            (char)(fcap->pixelformat >> 16), (char)(fcap->pixelformat >> 24),
-            fcap->width_min, fcap->width_max, fcap->width_step,
-            fcap->height_min, fcap->height_max, fcap->height_step);
-    i++;
-  }
-
-  /* Get default/native format */
-
-  fmt.type = type;
-  if (video_get_format(video_dev, &fmt)) {
-    LOG_ERR("Unable to retrieve video format");
-    return 0;
-  }
-  LOG_INF("video_get_format(1): ret w:%u h:%u fmt:%x", fmt.width, fmt.height,
-          fmt.pixelformat);
-
-  /* try the order of stuff mentioned by @josuah */
-#ifndef USE_EXAMAPLE_ORDERS
-  LOG_INF("- Video format: %c%c%c%c %ux%u", (char)fmt.pixelformat,
-          (char)(fmt.pixelformat >> 8), (char)(fmt.pixelformat >> 16),
-          (char)(fmt.pixelformat >> 24), fmt.width, fmt.height);
-
-  if (video_set_format(video_dev, &fmt)) {
-    LOG_ERR("Unable to set format");
-    return 0;
-  }
-
-#if CONFIG_VIDEO_FRAME_HEIGHT || CONFIG_VIDEO_FRAME_WIDTH
-#if CONFIG_VIDEO_FRAME_HEIGHT
-  fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
-#endif
-
-#if CONFIG_VIDEO_FRAME_WIDTH
-  fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
-#endif
-#endif
-  fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
-
-  /* First set the format which has the size of the frame defined */
-  LOG_INF("video_set_format: %u %u", fmt.width, fmt.height);
-  if (video_set_format(video_dev, &fmt)) {
-    LOG_ERR("Unable to set format");
-    return 0;
-  }
-
-  /* initialize the bsize to the size of the frame */
-  bsize = fmt.width * fmt.height * 2;
-  /* Set the crop setting if necessary */
-#if CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT
-  sel.target = VIDEO_SEL_TGT_CROP;
-  sel.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
-  sel.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
-  sel.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
-  sel.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
-  LOG_INF("video_set_selection: VIDEO_SEL_TGT_CROP(%u, %u, %u, %u)",
-          sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
-  if (video_set_selection(video_dev, &sel)) {
-    LOG_ERR("Unable to set selection crop  (%u,%u)/%ux%u", sel.rect.left,
-            sel.rect.top, sel.rect.width, sel.rect.height);
-    return 0;
-  }
-  LOG_INF("Selection crop set to (%u,%u)/%ux%u", sel.rect.left, sel.rect.top,
-          sel.rect.width, sel.rect.height);
-  bsize = sel.rect.width * sel.rect.height * 2;
-#endif
-
-  if (video_get_format(video_dev, &fmt)) {
-    LOG_ERR("Unable to retrieve video format");
-    return 0;
-  }
-  LOG_INF("video_get_format(2): ret fmt:%x w:%u h:%u pitch:%u",
-          /*VIDEO_FOURCC_TO_STR(fmt.pixelformat), */ fmt.pixelformat, fmt.width,
-          fmt.height, fmt.pitch);
-  bsize = fmt.height * fmt.pitch;
-
-#else /* USE_EXAMAPLE_ORDERS */
-
-  /* Set the crop setting if necessary */
-#if CONFIG_VIDEO_SOURCE_CROP_WIDTH && CONFIG_VIDEO_SOURCE_CROP_HEIGHT
-  sel.target = VIDEO_SEL_TGT_CROP;
-  sel.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
-  sel.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
-  sel.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
-  sel.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
-  LOG_INF("video_set_selection: VIDEO_SEL_TGT_CROP(%u, %u, %u, %u)",
-          sel.rect.left, sel.rect.top, sel.rect.width, sel.rect.height);
-  if (video_set_selection(video_dev, &sel)) {
-    LOG_ERR("Unable to set selection crop  (%u,%u)/%ux%u", sel.rect.left,
-            sel.rect.top, sel.rect.width, sel.rect.height);
-    return 0;
-  }
-  LOG_INF("Selection crop set to (%u,%u)/%ux%u", sel.rect.left, sel.rect.top,
-          sel.rect.width, sel.rect.height);
-#endif
-
-  LOG_INF("CONFIG_VIDEO_FRAME_HEIGHT: %u CONFIG_VIDEO_FRAME_WIDTH: %u",
-          CONFIG_VIDEO_FRAME_HEIGHT, CONFIG_VIDEO_FRAME_WIDTH);
-#if CONFIG_VIDEO_FRAME_HEIGHT || CONFIG_VIDEO_FRAME_WIDTH
-#if CONFIG_VIDEO_FRAME_HEIGHT
-  fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
-#endif
-
-#if CONFIG_VIDEO_FRAME_WIDTH
-  fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
-#endif
-#if 1
-  /*
-   * Check (if possible) if targeted size is same as crop
-   * and if compose is necessary
-   */
-  LOG_INF("video_get_selection VIDEO_SEL_TGT_CROP");
-  sel.target = VIDEO_SEL_TGT_CROP;
-  err = video_get_selection(video_dev, &sel);
-  if (err < 0 && err != -ENOSYS) {
-    LOG_ERR("Unable to get selection crop");
-    return 0;
-  }
-
-  LOG_INF("video_get_selection VIDEO_SEL_TGT_CROP(%u,%u)/%ux%u", sel.rect.left,
-          sel.rect.top, sel.rect.width, sel.rect.height);
-
-  if (err == 0 &&
-      (sel.rect.width != fmt.width || sel.rect.height != fmt.height)) {
-    LOG_INF("SEL!=FMT S(%u %u) F(%u %u)", fmt.width, fmt.height, sel.rect.width,
-            sel.rect.height);
-    sel.target = VIDEO_SEL_TGT_COMPOSE;
-    sel.rect.left = 0;
-    sel.rect.top = 0;
-    sel.rect.width = fmt.width;
-    sel.rect.height = fmt.height;
-    err = video_set_selection(video_dev, &sel);
-    if (err < 0 && err != -ENOSYS) {
-      LOG_ERR("Unable to set selection compose");
-      return 0;
-    }
-  }
-#endif
-
-  if (strcmp(CONFIG_VIDEO_PIXEL_FORMAT, "")) {
-    fmt.pixelformat = VIDEO_FOURCC_FROM_STR(CONFIG_VIDEO_PIXEL_FORMAT);
-  }
-
-#endif
-  LOG_INF("- Video format: %s %ux%u", VIDEO_FOURCC_TO_STR(fmt.pixelformat),
-          fmt.width, fmt.height);
-
-  if (video_set_format(video_dev, &fmt)) {
-    LOG_ERR("Unable to set format");
-    return 0;
-  }
-
-  /* Size to allocate for each buffer */
-  if (caps.min_line_count == LINE_COUNT_HEIGHT) {
-    bsize = fmt.pitch * fmt.height;
-  } else {
-    bsize = fmt.pitch * caps.min_line_count;
-  }
-#endif /*USE_EXAMAPLE_ORDER*/
-
-  /* Alloc video buffers and enqueue for capture */
-  LOG_INF("Allocate buffers %u %u", ARRAY_SIZE(buffers), bsize);
-  for (i = 0; i < ARRAY_SIZE(buffers); i++) {
-    /*
-     * For some hardwares, such as the PxP used on i.MX RT1170 to do image
-     * rotation, buffer alignment is needed in order to achieve the best
-     * performance
-     */
-
-    buffers[i] = video_buffer_aligned_alloc(
-        bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN, K_FOREVER);
-    if (buffers[i] == NULL) {
-      LOG_ERR("Unable to alloc video buffer");
-      return 0;
-    }
-    buffers[i]->type = type;
-    LOG_INF(" %u Buffer: %p cb:%u", i, (void *)buffers[i]->buffer, bsize);
-    video_enqueue(video_dev, buffers[i]);
-  }
-
-  /* Start video capture */
-  if (video_stream_start(video_dev, type)) {
-    LOG_ERR("Unable to start capture (interface)");
-    return 0;
-  }
+  initialize_video();
 
   LOG_INF("Capture started");
 
   USBSerial.begin();
   // SerialX.begin();
-  USBSerial.println("Camera capture to USB...");
-
+#ifdef TRY_SNAPSHOT
 #if CONFIG_VIDEO_BUFFER_POOL_NUM_MAX == 1
   bool snapshot_mode = true;
 #else
@@ -386,7 +170,237 @@ int main(void) {
   } else {
     main_loop_continuous(video_dev, &fmt);
   }
+#else
+    main_loop_continuous(video_dev, &fmt);
+#endif  
 }
+
+//----------------------------------------------------------------------------------
+// iniitialize the camera/video
+//----------------------------------------------------------------------------------
+int initialize_video(uint8_t camera_index) {
+  struct video_caps caps;
+  enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
+  size_t bsize;
+  int i = 0;
+  int ret = 0;
+
+#ifdef DEFER_INIT_CAMERA
+  camera_ext_clock_enable();
+#endif
+
+  // lets get camera information
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
+  video_dev = dt_dcmis[camera_index];
+
+#elif DT_HAS_CHOSEN(zephyr_camera)
+  video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
+#endif
+  if (!device_is_ready(video_dev)) {
+    printk("ERROR: %s device is not ready\n",  video_dev->name);
+
+    if ((ret = device_init(video_dev)) < 0) {
+      printk("device_init camera(%p) failed:%d\n", video_dev, ret);
+      return 0;
+    }
+  }
+
+  const struct device *dcmi = nullptr;
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
+  dcmi = dt_camera_sensors[camera_index];
+#elif DT_HAS_CHOSEN(zephyr_camera_sensor)
+  dcmi = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera_sensor));
+#endif
+  if (dcmi) {
+    if (!device_is_ready(dcmi)) {
+      if ((ret = device_init(dcmi)) < 0) {
+        printk("device_init camera sensor(%p) failed:%d\n", dcmi, ret);
+        return false;
+      }
+    }
+  }
+
+  printk("INFO: - Device name: %s\n",  video_dev->name);
+
+  /* Get capabilities */
+  caps.type = type;
+  if (video_get_caps(video_dev, &caps)) {
+    printk("ERROR: Unable to retrieve video capabilities\n") ;
+    return 0;
+  }
+
+  /* lets see if we can set snapshot mode */
+#if defined(VIDEO_CID_SNAPSHOT_MODE)
+  printk("Try to set Snapshot mode...\n");
+  struct video_ctrl_query cq = {.dev = video_dev, .id = VIDEO_CID_SNAPSHOT_MODE};
+  if (video_query_ctrl(&cq) == 0) {
+    printk("Before:\n");
+    video_print_ctrl(&cq);
+  }
+
+  struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 2};
+  if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
+    printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
+  }
+
+  /* lets try to retrieve the value */
+  if (video_get_ctrl(video_dev, &ctrl_snapshot) < 0) {
+    printk("Failed to retrieve video_control VIDEO_CID_SNAPSHOT_MODE");
+  } else {
+    printk("After Video Snapshot mode: %u\n", ctrl_snapshot.val);
+  }
+
+
+#endif
+
+#if 0
+    LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
+            caps.min_line_count, caps.max_line_count);
+#else
+    LOG_INF("- Capabilities: min buf:%u", caps.min_vbuf_count);
+#endif  
+  while (caps.format_caps[i].pixelformat) {
+    const struct video_format_cap *fcap = &caps.format_caps[i];
+    /* four %c to string */
+    printk("INFO:   %c%c%c%c width [%u; %u; %u] height [%u; %u; %u]\n",
+      (char)fcap->pixelformat, (char)(fcap->pixelformat >> 8),
+      (char)(fcap->pixelformat >> 16), (char)(fcap->pixelformat >> 24),
+      fcap->width_min, fcap->width_max, fcap->width_step, fcap->height_min,
+      fcap->height_max, fcap->height_step);
+    i++;
+  }
+
+
+  /* Get default/native format */
+  fmt.type = type;
+  if (video_get_format(video_dev, &fmt)) {
+    printk("ERROR: Unable to retrieve video format\n") ;
+    return 0;
+  }
+  printk("video_get_format returned: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
+  /* Set format */
+  fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
+  fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
+  fmt.pixelformat = VIDEO_PIX_FMT_GREY; //VIDEO_PIX_FMT_RGB565;
+  printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
+
+  if (video_set_format(video_dev, &fmt)) {
+    printk("ERROR: Unable to set up video format\n") ;
+    return 0;
+  }
+
+  #if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0)
+  printk("Set Video Selection CROP %d %d:\n", CONFIG_VIDEO_SOURCE_CROP_WIDTH, CONFIG_VIDEO_SOURCE_CROP_HEIGHT);
+  struct video_selection vselCrop;
+  vselCrop.type = VIDEO_BUF_TYPE_OUTPUT;
+  vselCrop.target = VIDEO_SEL_TGT_CROP;
+  vselCrop.rect.left = CONFIG_VIDEO_SOURCE_CROP_LEFT;
+  vselCrop.rect.top = CONFIG_VIDEO_SOURCE_CROP_TOP;
+  vselCrop.rect.width = CONFIG_VIDEO_SOURCE_CROP_WIDTH;
+  vselCrop.rect.height = CONFIG_VIDEO_SOURCE_CROP_HEIGHT;
+
+  if ((ret = video_set_selection(video_dev, &vselCrop))!= 0) {
+    printk("ERROR: %d\n", ret) ;
+    return 0;
+  }
+
+
+  #endif
+
+
+  printk("INFO: - Format: %c%c%c%c %ux%u %u\n",   (char)fmt.pixelformat, (char)(fmt.pixelformat >> 8),
+    (char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
+    fmt.pitch);
+
+#if 0
+  if (caps.min_line_count != LINE_COUNT_HEIGHT) {
+    printk("ERROR: Partial framebuffers not supported by this sample\n") ;
+    return 0;
+  }
+#endif
+  
+  /* Size to allocate for each buffer */
+  /* lets ask for the actual current format */
+  if ((ret = video_get_format(video_dev, &fmt)) != 0) {
+    printk("call to video_get_format failed: %d\n", ret);
+  }
+  printk("After call video_get_format: - Format: %c%c%c%c %ux%u %u\n",   (char)fmt.pixelformat, (char)(fmt.pixelformat >> 8),
+    (char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
+    fmt.pitch);
+
+
+  bsize = fmt.pitch * fmt.height;
+
+  /* Alloc video buffers and enqueue for capture */
+  printk("Initialze video buffer list cnt:%u size:%u\n",  ARRAY_SIZE(buffers), bsize);
+  for (i = 0; i < ARRAY_SIZE(buffers); i++) {
+    buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
+              K_FOREVER);
+    #ifdef CAMERA_USE_FIXED_BUFFER
+    if ((i == 0) &&  (buffers[i] != NULL)) {
+      // REAL hack change the buffer over to our fixed buffer..
+      printk("  use %p instead of %p\n", buffers[i], frame_buffer);
+      buffers[i]->buffer = (uint8_t *)frame_buffer;
+    }
+    #endif
+
+    printk("  %d:%x\n", i, (uint32_t)buffers[i]);
+    if (buffers[i] == NULL) {
+      printk("ERROR: Unable to alloc video buffer\n") ;
+      return 0;
+    }
+    buffers[i]->type = type;
+    if (video_enqueue(video_dev, buffers[i]) < 0) {
+      printk("Error video_enqueue(%p %p)\n", video_dev, buffers[i]);
+    }
+  }
+
+//  #if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
+//  frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
+//  #endif
+
+  /* Set controls */
+  struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = 1};
+
+  if (IS_ENABLED(CONFIG_VIDEO_HFLIP)) {
+    video_set_ctrl(video_dev, &ctrl);
+  }
+
+  if (IS_ENABLED(CONFIG_VIDEO_VFLIP)) {
+    ctrl.id = VIDEO_CID_VFLIP;
+    video_set_ctrl(video_dev, &ctrl);
+  }
+
+//#ifdef TRY_CAPTURE_SNAPSHOT
+//  video_set_snapshot_mode(video_dev, true);
+//#endif
+  /* Start video capture */
+  printk("Starting  capture\n");
+  if (video_stream_start(video_dev, type)) {
+    printk("ERROR: Unable to start capture (interface)\n") ;
+    return 0;
+  }
+
+  // Lets see if we can call video_get_selection
+#if 1
+  printk("Get Video Selection:\n");
+  struct video_selection vsel;
+  vsel.type = VIDEO_BUF_TYPE_OUTPUT;
+  vsel.target = VIDEO_SEL_TGT_NATIVE_SIZE;
+  if ((ret = video_get_selection(video_dev, &vsel))!= 0) {
+    printk("ERROR: %d\n", ret) ;
+    return 0;
+  } else {
+    printk("\tTy:%d Tar:%d R:%u %u %u %u\n", vsel.type, vsel.target,
+      vsel.rect.left, vsel.rect.top, vsel.rect.width, vsel.rect.height);
+  }
+#endif
+
+  return 1;
+
+}
+
+
 
 void main_loop_continuous(const struct device *video_dev,
                           struct video_format *fmt) {
@@ -443,7 +457,7 @@ void create_test_image(struct video_buffer *vbuf, uint16_t frame_width,
 
 
 
-
+#ifdef TRY_SNAPSHOT
 void main_loop_snapshot(const struct device *video_dev,
                         struct video_format *fmt) {
   struct video_buffer *vbuf = nullptr;
@@ -537,6 +551,7 @@ void main_loop_snapshot(const struct device *video_dev,
     }
   }
 }
+#endif
 
 // Pass 8-bit (each) R,G,B, get back 16-bit packed color
 uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {

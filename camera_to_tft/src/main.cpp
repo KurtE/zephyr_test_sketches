@@ -21,7 +21,7 @@
 //#define ILI9341_USE_FIXED_BUFFER
 // Hack try to use fixed buffer for camera
 //#define CAMERA_USE_FIXED_BUFFER
-#define TRY_CAPTURE_SNAPSHOT
+//#define TRY_CAPTURE_SNAPSHOT
 //#define TRY_WRITERECTCB
 #define USE_ST7796
 
@@ -71,7 +71,7 @@ static struct spi_dt_spec generic_tft_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341prjc_spi_dev), SPI_OP, 0);
 #else
 static struct spi_dt_spec generic_tft_spi =
-	SPI_DT_SPEC_GET(DT_NODELABEL(generic_tft_spi_dev), SPI_OP, 0);
+	SPI_DT_SPEC_GET(DT_NODELABEL(generic_tft_spi_dev), SPI_OP);
 #endif
 
 
@@ -279,7 +279,7 @@ int main(void)
 //		#else
 		err = video_dequeue(video_dev, &vbuf, K_MSEC(250/*10000*/));
 		read_frame_sum += (micros() - start_time);
-		//printk("Dequeue: %lu\n", micros() - start_time);
+		printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
 			printk("ERROR: Unable to dequeue video buf\n");
 	  		k_sleep(K_MSEC(1000));
@@ -488,14 +488,33 @@ int initialize_video(uint8_t camera_index) {
 	/* lets see if we can set snapshot mode */
 #if defined(VIDEO_CID_SNAPSHOT_MODE)
 	printk("Try to set Snapshot mode...\n");
-	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 1};
+	struct video_ctrl_query cq = {.dev = video_dev, .id = VIDEO_CID_SNAPSHOT_MODE};
+	if (video_query_ctrl(&cq) == 0) {
+		printk("Before:\n");
+		video_print_ctrl(&cq);
+	}
+
+	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 2};
 	if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
 		printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
 	}
+
+	/* lets try to retrieve the value */
+	if (video_get_ctrl(video_dev, &ctrl_snapshot) < 0) {
+		printk("Failed to retrieve video_control VIDEO_CID_SNAPSHOT_MODE");
+	} else {
+		printk("After Video Snapshot mode: %u\n", ctrl_snapshot.val);
+	}
+
+
 #endif
 
+#if 0
   	LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
 	          caps.min_line_count, caps.max_line_count);
+#else
+  	LOG_INF("- Capabilities: min buf:%u", caps.min_vbuf_count);
+#endif	
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* four %c to string */
@@ -549,11 +568,13 @@ int initialize_video(uint8_t camera_index) {
 		(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
 		fmt.pitch);
 
+#if 0
 	if (caps.min_line_count != LINE_COUNT_HEIGHT) {
 		printk("ERROR: Partial framebuffers not supported by this sample\n") ;
 		return 0;
 	}
-
+#endif
+	
 	/* Size to allocate for each buffer */
 	/* lets ask for the actual current format */
 	if ((ret = video_get_format(video_dev, &fmt)) != 0) {
@@ -567,13 +588,14 @@ int initialize_video(uint8_t camera_index) {
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
-	printk("Initialze video buffer list (%u)\n",  ARRAY_SIZE(buffers));
+	printk("Initialze video buffer list cnt:%u size:%u\n",  ARRAY_SIZE(buffers), bsize);
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
 		#ifdef CAMERA_USE_FIXED_BUFFER
 		if ((i == 0) &&  (buffers[i] != NULL)) {
-			// REAL hack change the buffer over to our fixed buffer...
+			// REAL hack change the buffer over to our fixed buffer..
+			printk("  use %p instead of %p\n", buffers[i], frame_buffer);
 			buffers[i]->buffer = (uint8_t *)frame_buffer;
 		}
 		#endif
