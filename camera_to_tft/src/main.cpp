@@ -5,6 +5,8 @@
  */
 #define DEFER_INIT_CAMERA
 #define USE_CAMERA_LISTS
+
+
 /**
  * @file
  * @brief Sample echo app for CDC ACM class
@@ -51,6 +53,20 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include <zephyr/drivers/video-controls.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/multi_heap/shared_multi_heap.h>
+
+
+//uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
+
+
+// HMB01b0 4 bit mode
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
+
+// 8 bit mode
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_GREY;
+
+// 8 bit Bayer
+uint32_t video_pixel_format = VIDEO_PIX_FMT_SBGGR8;
+#define FRAME_RATE 10
 
 
 #if !defined(CONFIG_BOARD_ARDUINO_PORTENTA_H7)
@@ -124,6 +140,7 @@ ILI9341_GIGA_n tft(&generic_tft_spi, &generic_tft_pins[0], &generic_tft_pins[1],
 struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
 struct video_buffer *vbuf = nullptr;
 const struct device *video_dev;
+//struct video_buffer *rgb_buffer = nullptr;
 
 
 // map() transforms input "x" from one numerical range to another.  For example, if
@@ -132,6 +149,7 @@ extern void show_all_gpio_regs();
 extern void initialize_display();
 extern int initialize_video(uint8_t camera_index = 0);
 extern void	draw_scaled_up_image(uint16_t *pixels);
+extern void convert_bayer_image_to_rgb565(uint8_t *bayer, uint16_t *rgb, uint16_t width, uint16_t height);
 
 #if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_FRAME_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_FRAME_HEIGHT)
 #define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_SOURCE_CROP_WIDTH)
@@ -141,9 +159,9 @@ extern void	draw_scaled_up_image(uint16_t *pixels);
 #define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_FRAME_HEIGHT)
 #endif
 
-#if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
+//#if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT];
-#endif
+//#endif
 
 //#if defined(TRY_CAPTURE_SNAPSHOT)
 //#if (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) <= (320*240)
@@ -168,6 +186,11 @@ struct video_selection vselNativeSize = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_NA
 #define LED0_NODE DT_ALIAS(led0)
 
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+inline uint16_t color565(uint8_t r, uint8_t g, uint8_t b) 
+{
+	return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
 
 
 ////////////////////////////
@@ -305,23 +328,40 @@ int main(void)
 //#if defined(TRY_CAPTURE_SNAPSHOT)
 //		uint16_t *pixels = frame_buffer;
 //#else
-        uint16_t *pixels = (uint16_t *) vbuf->buffer;
-//#endif
-        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
-            pixels[i] = __REVSH(pixels[i]);
-        }
+		if (video_pixel_format == VIDEO_PIX_FMT_GREY) {
+			tft.writeGreyRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint8_t*)vbuf->buffer);
 
-		start_time = micros();
-		if (scale_up) {
-			draw_scaled_up_image(pixels);
+		} else if (video_pixel_format == VIDEO_PIX_FMT_SBGGR8) {
+			convert_bayer_image_to_rgb565((uint8_t*)vbuf->buffer, frame_buffer, CAMERA_IMAGE_WIDTH, CAMERA_IMAGE_HEIGHT);
+			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH-4, CONFIG_VIDEO_FRAME_HEIGHT-4, frame_buffer);
+
 		} else {
-			#ifdef TRY_WRITERECTCB
-			write_rect_active = true;
-			tft.writeRectCB(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels, &writerectCallback);
-			while (write_rect_active) k_sleep(K_USEC(59));
-			#else
-			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels);
-			#endif
+	        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+	//#endif
+			if (video_pixel_format == VIDEO_PIX_FMT_Y4) {
+		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
+			        //uint8_t gray_color = (pixels[i] & 0x0f) | ((pixels[i] >> 4) & 0xf0);
+			        uint8_t gray_color = ((pixels[i] & 0x0f) << 4) | ((pixels[i] >> 8) & 0x0f);
+			        pixels[i] = color565(gray_color, gray_color, gray_color);
+		        }
+			} else {
+		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
+		            pixels[i] = __REVSH(pixels[i]);
+		        }
+	       } 
+
+			start_time = micros();
+			if (scale_up) {
+				draw_scaled_up_image(pixels);
+			} else {
+				#ifdef TRY_WRITERECTCB
+				write_rect_active = true;
+				tft.writeRectCB(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels, &writerectCallback);
+				while (write_rect_active) k_sleep(K_USEC(59));
+				#else
+				tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels);
+				#endif
+			}
 		}
 		write_rect_sum += micros() - start_time;
 		//printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
@@ -393,6 +433,16 @@ void initialize_display() {
 	k_sleep(K_MSEC(500));
 //	WaitForUserInput(2000);
 
+#if 0
+	#define RECT_WIDTH 31
+	uint8_t temp_rect[RECT_WIDTH*RECT_WIDTH]; 
+	for (uint16_t i = 0; i < 256; i += 32) {
+		memset(temp_rect, i, sizeof(temp_rect));
+		tft.writeGreyRect(i, 0, RECT_WIDTH, RECT_WIDTH, temp_rect);
+		tft.writeGreyRect(i, RECT_WIDTH, RECT_WIDTH, RECT_WIDTH, temp_rect);
+	}
+	WaitForUserInput(10000);
+#endif
 
 }
 
@@ -537,7 +587,7 @@ int initialize_video(uint8_t camera_index) {
 	/* Set format */
 	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
 	fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
-	fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
+	fmt.pixelformat = video_pixel_format;
 	printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
 
 	if (video_set_format(video_dev, &fmt)) {
@@ -588,7 +638,7 @@ int initialize_video(uint8_t camera_index) {
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
-	printk("Initialze video buffer list cnt:%u size:%u\n",  ARRAY_SIZE(buffers), bsize);
+	printk("Initialze video buffer list cnt:%u size:%u %u\n",  ARRAY_SIZE(buffers), bsize, fmt.size);
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
@@ -611,6 +661,7 @@ int initialize_video(uint8_t camera_index) {
 		}
 	}
 
+
 //	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
 //	frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
 //	#endif
@@ -627,6 +678,15 @@ int initialize_video(uint8_t camera_index) {
 		video_set_ctrl(video_dev, &ctrl);
 	}
 
+#ifdef FRAME_RATE
+	struct video_frmival frmival;
+	printk("Set Frame Rate: %u\n", FRAME_RATE);
+	frmival.numerator = FRAME_RATE;
+	frmival.denominator = 1;
+	if (video_set_frmival(video_dev, &frmival)){
+		printk("ERROR: Unable to set up frame rate\n") ;
+	}
+#endif
 //#ifdef TRY_CAPTURE_SNAPSHOT
 //	video_set_snapshot_mode(video_dev, true);
 //#endif
@@ -693,7 +753,13 @@ void draw_scaled_up_image(uint16_t *pixels) {
 void WaitForUserInput(uint32_t timeout) {
     USBSerial.print("Hit key to continue\n");
     uint32_t time_start = millis();
-    while ((USBSerial.read() == -1) && ((uint32_t)(millis() - time_start)  < timeout)) ;
+    int ich;
+    while (((ich = USBSerial.read()) == -1) && ((uint32_t)(millis() - time_start)  < timeout)) ;
+    if (ich == 'p') {
+    	USBSerial.print("Paused\n");
+	    while (USBSerial.read() != -1) ;
+	    while (USBSerial.read() == -1) ;
+    }
     while (USBSerial.read() != -1) ;
     USBSerial.print("Done!\n");
 }
@@ -771,6 +837,69 @@ void show_all_gpio_regs() {
   print_gpio_regs("I", (GPIO_TypeDef *)GPIOI_BASE);
   print_gpio_regs("J", (GPIO_TypeDef *)GPIOJ_BASE);
   print_gpio_regs("K", (GPIO_TypeDef *)GPIOK_BASE);
+}
+
+
+// Note The resulting image will lose 4 rows and columns 324x244 -> 320x240
+#define BAYER_INDEX(x, y, w) ((y) * (w) + (x))
+
+void convert_bayer_image_to_rgb565(uint8_t *bayer, uint16_t *rgb, uint16_t width, uint16_t height) {
+  uint16_t r, g, b;
+  for (uint16_t y = 2; y < (height - 2); y++) {
+    for (uint16_t x = 2; x < (width - 2); x++) {
+#ifdef MIRROR_FLIP_CAMERA
+      if (y & 1) {  // GREEN BLUE row
+        if (x & 1) { // red
+          b = bayer[BAYER_INDEX(x, y, width)];
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          r = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+
+        } else {  // green
+          b = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          r = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        }
+
+      } else {        // RED GREEN row)
+        if (x & 1) {  //green
+          b = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          r = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        } else {  // blue
+          b = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          r = bayer[BAYER_INDEX(x, y, width)];
+        }
+      }
+#else
+      if (y & 1) {  // GREEN RED row
+        if (x & 1) { // red
+            r = bayer[BAYER_INDEX(x, y, width)];
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          b = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+
+        } else {  // green
+          r = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          b = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        }
+
+      } else {        // BLUE GREEN row)
+        if (x & 1) {  //green
+          r = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          b = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        } else {  // blue
+          r = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          b = bayer[BAYER_INDEX(x, y, width)];
+        }
+      }
+#endif
+      *rgb++ = CL(r, g, b);
+    }
+  }
+
 }
 
 

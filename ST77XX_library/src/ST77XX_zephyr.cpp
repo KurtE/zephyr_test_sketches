@@ -908,6 +908,132 @@ void ST77XX_zephyr::writeRect(int16_t x, int16_t y, int16_t w, int16_t h,
   endSPITransaction();
 }
 
+
+  // Experiment use the callback version (async) amd see if it is faster.
+  void ST77XX_zephyr::writeGreyRect(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *pcolors)
+  {
+
+  int16_t image_width = w;
+  if (x == CENTER)
+    x = (_width - w) / 2;
+  if (y == CENTER)
+    y = (_height - h) / 2;
+  x += _originx;
+  y += _originy;
+  uint16_t x_clip_left =
+      0; // How many entries at start of colors to skip at start of row
+  uint16_t x_clip_right =
+      0; // how many color entries to skip at end of row for clipping
+  // Rectangular clipping
+
+  // See if the whole thing out of bounds...
+  if ((x >= _displayclipx2) || (y >= _displayclipy2))
+    return;
+  if (((x + w) <= _displayclipx1) || ((y + h) <= _displayclipy1))
+    return;
+
+  // In these cases you can not do simple clipping, as we need to synchronize
+  // the colors array with the
+  // We can clip the height as when we get to the last visible we don't have to
+  // go any farther.
+  // also maybe starting y as we will advance the color array.
+  if (y < _displayclipy1) {
+    int dy = (_displayclipy1 - y);
+    h -= dy;
+    pcolors += (dy * w); // Advance color array to
+    y = _displayclipy1;
+  }
+
+  if ((y + h - 1) >= _displayclipy2)
+    h = _displayclipy2 - y;
+
+  // For X see how many items in color array to skip at start of row and
+  // likewise end of row
+  if (x < _displayclipx1) {
+    x_clip_left = _displayclipx1 - x;
+    w -= x_clip_left;
+    x = _displayclipx1;
+  }
+  if ((x + w - 1) >= _displayclipx2) {
+    x_clip_right = w;
+    w = _displayclipx2 - x;
+    x_clip_right -= w;
+  }
+
+#ifdef ENABLE_ST77XX_FRAMEBUFFER
+  if (_use_fbtft) {
+    //updateChangedRange(
+    //    x, y, w, h); // update the range of the screen that has been changed;
+    uint16_t *pfbPixel_row = &_pfbtft[y * _width + x];
+    int16_t y_changed_min = _height;
+    int16_t y_changed_max = -1;
+    int16_t i_changed_min = _width;
+    int16_t i_changed_max = -1;
+
+    for (; h > 0; h--) {
+      uint16_t *pfbPixel = pfbPixel_row;
+      pcolors += x_clip_left;
+      for (int i = 0; i < w; i++) {
+        uint16_t color = color565(*pcolors, *pcolors, *pcolors);
+        if (*pfbPixel != color) {
+          // pixel changed
+          *pfbPixel = color;
+          if (y < y_changed_min) y_changed_min = y;
+          if (y > y_changed_max) y_changed_max = y;
+          if (i < i_changed_min) i_changed_min = i;
+          if (i > i_changed_max) i_changed_max = i;
+
+        }
+        pfbPixel++;
+        pcolors++;
+      }
+      pfbPixel_row += _width;
+      pcolors += x_clip_right;
+      y++;
+    }
+    // See if we found any change
+    // if any of the min/max values have default value we know that nothing changed.
+    if (y_changed_max != -1) {
+      updateChangedRange(x + i_changed_min , y_changed_min, 
+        (i_changed_max - i_changed_min) + 1, (y_changed_max - y_changed_min) + 1);
+
+      //if(Serial)USBSerial.printf("WRECT: %d - %d %d %d %d\n", x, i_changed_min, y_changed_min, i_changed_max, y_changed_max);
+    }
+    return;
+  }
+#endif
+  uint16_t pixel_buffer[32];
+  struct spi_buf tx_buf = { .buf = (void*)pixel_buffer, .len = sizeof(pixel_buffer) };
+  const struct spi_buf_set tx_buf_set = { .buffers = &tx_buf, .count = 1 };
+
+  beginSPITransaction();
+  setAddr(x, y, x + w - 1, y + h - 1);
+  writecommand_cont(ST77XX_RAMWR);
+  setDataMode();
+
+  uint8_t bindex = 0;
+  pcolors += x_clip_left;
+  for (y = h; y > 0; y--) {
+    const uint8_t *pcrow = pcolors;
+    for (int16_t i = 0; i < w; i++) {
+      pixel_buffer[bindex++] = color565(*pcrow, *pcrow, *pcrow);
+      pcrow++;
+      if (bindex == ARRAY_SIZE(pixel_buffer)) {
+        spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+        bindex = 0;
+      }
+    } 
+    pcolors += image_width;
+  }
+  if (bindex) {
+    tx_buf.len = bindex * 2;    
+    spi_transceive(_spi_dev->bus, &_config16, &tx_buf_set, nullptr);
+  }
+  endSPITransaction();
+}
+
+
+
 // Experiment use the callback version (async) amd see if it is faster.
 // note this ignores if there is a frame buffer and clipping and....
 void ST77XX_zephyr::writeRectCB(int16_t x, int16_t y, int16_t w, int16_t h,
