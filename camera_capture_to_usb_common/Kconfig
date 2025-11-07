@@ -48,12 +48,12 @@ config VIDEO_PIXEL_FORMAT
 	help
 	  Pixel format of the video frame. If not set, the default pixel format is used.
 
-config VIDEO_CTRL_HFLIP
+config VIDEO_HFLIP
 	bool "Mirror the video frame horizontally"
 	help
 	  If set, mirror the video frame horizontally
 
-config VIDEO_CTRL_VFLIP
+config VIDEO_VFLIP
 	bool "Mirror the video frame vertically"
 	help
 	  If set, mirror the video frame vertically

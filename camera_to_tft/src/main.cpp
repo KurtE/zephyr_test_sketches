@@ -6,6 +6,10 @@
 #define DEFER_INIT_CAMERA
 #define USE_CAMERA_LISTS
 
+#define HFLIP 0
+#define VFLIP 0
+#define FRAME_RATE 22
+
 
 /**
  * @file
@@ -59,14 +63,14 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 
 // HMB01b0 4 bit mode
-//uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
+uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
 
 // 8 bit mode
 //uint32_t video_pixel_format = VIDEO_PIX_FMT_GREY;
 
 // 8 bit Bayer
-uint32_t video_pixel_format = VIDEO_PIX_FMT_SBGGR8;
-#define FRAME_RATE 10
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_SBGGR8;
+
 
 
 #if !defined(CONFIG_BOARD_ARDUINO_PORTENTA_H7)
@@ -302,7 +306,7 @@ int main(void)
 //		#else
 		err = video_dequeue(video_dev, &vbuf, K_MSEC(250/*10000*/));
 		read_frame_sum += (micros() - start_time);
-		printk("Dequeue: %lu\n", micros() - start_time);
+		//printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
 			printk("ERROR: Unable to dequeue video buf\n");
 	  		k_sleep(K_MSEC(1000));
@@ -340,8 +344,8 @@ int main(void)
 	//#endif
 			if (video_pixel_format == VIDEO_PIX_FMT_Y4) {
 		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
-			        //uint8_t gray_color = (pixels[i] & 0x0f) | ((pixels[i] >> 4) & 0xf0);
-			        uint8_t gray_color = ((pixels[i] & 0x0f) << 4) | ((pixels[i] >> 8) & 0x0f);
+			        uint8_t gray_color = (pixels[i] & 0x0f) | ((pixels[i] >> 4) & 0xf0);
+			        //uint8_t gray_color = ((pixels[i] & 0x0f) << 4) | ((pixels[i] >> 8) & 0x0f);
 			        pixels[i] = color565(gray_color, gray_color, gray_color);
 		        }
 			} else {
@@ -667,7 +671,7 @@ int initialize_video(uint8_t camera_index) {
 //	#endif
 
 	/* Set controls */
-	struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = 1};
+	struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = HFLIP};
 
 	if (IS_ENABLED(CONFIG_VIDEO_HFLIP)) {
 		video_set_ctrl(video_dev, &ctrl);
@@ -675,17 +679,22 @@ int initialize_video(uint8_t camera_index) {
 
 	if (IS_ENABLED(CONFIG_VIDEO_VFLIP)) {
 		ctrl.id = VIDEO_CID_VFLIP;
+		ctrl.val = VFLIP;
 		video_set_ctrl(video_dev, &ctrl);
 	}
 
 #ifdef FRAME_RATE
 	struct video_frmival frmival;
 	printk("Set Frame Rate: %u\n", FRAME_RATE);
-	frmival.numerator = FRAME_RATE;
-	frmival.denominator = 1;
-	if (video_set_frmival(video_dev, &frmival)){
+	frmival.denominator = FRAME_RATE;
+	frmival.numerator = 1;
+	if (video_set_frmival(video_dev, &frmival) < 0){
 		printk("ERROR: Unable to set up frame rate\n") ;
 	}
+
+	video_get_frmival(video_dev, &frmival);
+	printk("Returned frame rate: %u\n", frmival.denominator);
+
 #endif
 //#ifdef TRY_CAPTURE_SNAPSHOT
 //	video_set_snapshot_mode(video_dev, true);

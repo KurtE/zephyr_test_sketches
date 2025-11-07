@@ -39,9 +39,9 @@
 		zephyr,deferred-init;
 		reg = <0x24>;
 		status = "okay";
-		reset-gpios = <&gpioe 3 GPIO_ACTIVE_LOW>;
-		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
-		data-bits = <8>;
+		reset-gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpiod 5 GPIO_ACTIVE_HIGH>;
+		data-bits = <4>;
 		port {
 			hm01b0_ep_out: endpoint {
 				remote-endpoint-label = "dcmi_ep_in";
@@ -156,7 +156,7 @@
 		compatible = "pwm-clock";
 		clock-frequency = <0>;
 		#clock-cells = <1>;
-		pwms = <&pwm1 1 PWM_HZ(12000000) PWM_POLARITY_NORMAL>;
+		pwms = <&pwm1 1 PWM_HZ(6000000) PWM_POLARITY_NORMAL>;
 		/* 12MHz for 7670, default is also 12MHz */
 	};
 };
