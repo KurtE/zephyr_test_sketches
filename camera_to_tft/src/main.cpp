@@ -8,8 +8,7 @@
 
 #define HFLIP 0
 #define VFLIP 0
-#define FRAME_RATE 22
-
+#define FRAME_RATE 45
 
 /**
  * @file
@@ -60,7 +59,6 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 
 //uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
-
 
 // HMB01b0 4 bit mode
 uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
@@ -515,16 +513,16 @@ int initialize_video(uint8_t camera_index) {
 		}
 	}
 
-	const struct device *dcmi = nullptr;
+	const struct device *video_dev_sensor = nullptr;
 #if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
-	dcmi = dt_camera_sensors[camera_index];
+	video_dev_sensor = dt_camera_sensors[camera_index];
 #elif DT_HAS_CHOSEN(zephyr_camera_sensor)
-	dcmi = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera_sensor));
+	video_dev_sensor = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera_sensor));
 #endif
-	if (dcmi) {
-		if (!device_is_ready(dcmi)) {
-			if ((ret = device_init(dcmi)) < 0) {
-				printk("device_init camera sensor(%p) failed:%d\n", dcmi, ret);
+	if (video_dev_sensor) {
+		if (!device_is_ready(video_dev_sensor)) {
+			if ((ret = device_init(video_dev_sensor)) < 0) {
+				printk("device_init camera sensor(%p) failed:%d\n", video_dev_sensor, ret);
 				return false;
 			}
 		}
@@ -685,15 +683,33 @@ int initialize_video(uint8_t camera_index) {
 
 #ifdef FRAME_RATE
 	struct video_frmival frmival;
-	printk("Set Frame Rate: %u\n", FRAME_RATE);
+	struct video_frmival_enum fie;
+
+	printk("Request Frame Rate: %u\n", FRAME_RATE);
+
 	frmival.denominator = FRAME_RATE;
 	frmival.numerator = 1;
+
+	fie.format = &fmt;
+	fie.discrete = frmival;
+	fie.type = VIDEO_FRMIVAL_TYPE_DISCRETE;
+	video_closest_frmival(video_dev, &fie);
+	printk("Closest dev: t:%u %u %u\n", fie.type, fie.discrete.numerator, fie.discrete.denominator);
+
+	if (video_dev_sensor) {
+		fie.format = &fmt;
+		fie.discrete = frmival;
+		fie.type = VIDEO_FRMIVAL_TYPE_DISCRETE;
+		video_closest_frmival(video_dev_sensor, &fie);
+		printk("Closest sensor: t:%u %u %u\n", fie.type, fie.discrete.numerator, fie.discrete.denominator);
+	}
+
 	if (video_set_frmival(video_dev, &frmival) < 0){
 		printk("ERROR: Unable to set up frame rate\n") ;
 	}
 
 	video_get_frmival(video_dev, &frmival);
-	printk("Returned frame rate: %u\n", frmival.denominator);
+	printk("Returned frame rate: %u %u = %u\n", frmival.numerator, frmival.denominator, frmival.denominator / frmival.numerator);
 
 #endif
 //#ifdef TRY_CAPTURE_SNAPSHOT

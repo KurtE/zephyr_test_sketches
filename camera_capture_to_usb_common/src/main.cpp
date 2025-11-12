@@ -33,6 +33,8 @@
 
 // #include "usb_serial.h"
 #define GRAY_IMAGE
+#define FRAME_RATE 60
+#define SNAPSHOT_MODE 0
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -159,7 +161,7 @@ int main(void) {
   USBSerial.begin();
   // SerialX.begin();
 #ifdef TRY_SNAPSHOT
-#if CONFIG_VIDEO_BUFFER_POOL_NUM_MAX == 1
+#if (CONFIG_VIDEO_BUFFER_POOL_NUM_MAX == 1) || SNAPSHOT_MODE
   bool snapshot_mode = true;
 #else
   bool snapshot_mode = false;
@@ -230,7 +232,7 @@ int initialize_video(uint8_t camera_index) {
   }
 
   /* lets see if we can set snapshot mode */
-#if defined(VIDEO_CID_SNAPSHOT_MODE)
+#if defined(VIDEO_CID_SNAPSHOT_MODE) && SNAPSHOT_MODE
   printk("Try to set Snapshot mode...\n");
   struct video_ctrl_query cq = {.dev = video_dev, .id = VIDEO_CID_SNAPSHOT_MODE};
   if (video_query_ctrl(&cq) == 0) {
@@ -238,7 +240,7 @@ int initialize_video(uint8_t camera_index) {
     video_print_ctrl(&cq);
   }
 
-  struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 2};
+  struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = SNAPSHOT_MODE};
   if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
     printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
   }
@@ -371,6 +373,25 @@ int initialize_video(uint8_t camera_index) {
     video_set_ctrl(video_dev, &ctrl);
   }
 
+#ifdef FRAME_RATE
+  struct video_frmival frmival;
+
+  video_get_frmival(video_dev, &frmival);
+  printk("frame rate before: %u / %u = %u\n", frmival.denominator, frmival.numerator, frmival.denominator / frmival.numerator);
+
+  printk("Set Frame Rate: %u\n", FRAME_RATE);
+  frmival.denominator = FRAME_RATE;
+  frmival.numerator = 1;
+  if (video_set_frmival(video_dev, &frmival) < 0){
+    printk("ERROR: Unable to set up frame rate\n") ;
+  }
+
+  video_get_frmival(video_dev, &frmival);
+  printk("Returned frame rate: %u / %u = %u\n", frmival.denominator, frmival.numerator, frmival.denominator / frmival.numerator);
+
+#endif
+
+
 //#ifdef TRY_CAPTURE_SNAPSHOT
 //  video_set_snapshot_mode(video_dev, true);
 //#endif
@@ -383,7 +404,7 @@ int initialize_video(uint8_t camera_index) {
 
   // Lets see if we can call video_get_selection
 #if 1
-  printk("Get Video Selection:\n");
+  printk("Get Video Selection (VIDEO_SEL_TGT_NATIVE_SIZE):\n");
   struct video_selection vsel;
   vsel.type = VIDEO_BUF_TYPE_OUTPUT;
   vsel.target = VIDEO_SEL_TGT_NATIVE_SIZE;
@@ -408,6 +429,7 @@ void main_loop_continuous(const struct device *video_dev,
   int err;
   unsigned int frame = 0;
   uint32_t loop_count = 0;
+  LOG_INF("Start main_loop_continuous");
   while (1) {
     loop_count++;
     // if ((loop_count & 0x1f) == 0) printf(".");
@@ -465,6 +487,7 @@ void main_loop_snapshot(const struct device *video_dev,
   unsigned int frame = 0;
   bool continuous_send = false;
 
+  LOG_INF("Start main_loop_snapshot");
   int ch;
   while (1) {
     while ((ch = USBSerial.read()) != -1) {
