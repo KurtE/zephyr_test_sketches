@@ -1,0 +1,37 @@
+/ {
+    chosen {
+        zephyr,console = &lpuart6;
+        zephyr,shell-uart = &lpuart6;
+    };
+};
+
+&lpuart6 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
+&lpuart1 {
+    /* Disable UART1 - conflicts with I2C4 pins */
+    status = "disabled";
+    /delete-property/ pinctrl-0;
+    /delete-property/ pinctrl-1;
+    /delete-property/ pinctrl-names;
+};
+
+&lpi2c1 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c1>;
+    pinctrl-names = "default";
+};
+
+&lpi2c3 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c3>;
+    pinctrl-names = "default";
+};
+
+&lpi2c4 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c4>;
+    pinctrl-names = "default";
+};
