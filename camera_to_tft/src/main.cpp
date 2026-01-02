@@ -3,6 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#define DEFER_INIT_CAMERA
+#define USE_CAMERA_LISTS
+
+#define HFLIP 0
+#define VFLIP 0
+#define FRAME_RATE 45
 
 /**
  * @file
@@ -20,7 +26,7 @@
 //#define ILI9341_USE_FIXED_BUFFER
 // Hack try to use fixed buffer for camera
 //#define CAMERA_USE_FIXED_BUFFER
-#define TRY_CAPTURE_SNAPSHOT
+//#define TRY_CAPTURE_SNAPSHOT
 //#define TRY_WRITERECTCB
 #define USE_ST7796
 
@@ -52,6 +58,19 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include <zephyr/multi_heap/shared_multi_heap.h>
 
 
+//uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
+
+// HMB01b0 4 bit mode
+uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
+
+// 8 bit mode
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_GREY;
+
+// 8 bit Bayer
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_SBGGR8;
+
+
+
 #if !defined(CONFIG_BOARD_ARDUINO_PORTENTA_H7)
 #define ATP
 //#define PJRC
@@ -70,7 +89,7 @@ static struct spi_dt_spec generic_tft_spi =
 	SPI_DT_SPEC_GET(DT_NODELABEL(ili9341prjc_spi_dev), SPI_OP, 0);
 #else
 static struct spi_dt_spec generic_tft_spi =
-	SPI_DT_SPEC_GET(DT_NODELABEL(generic_tft_spi_dev), SPI_OP, 0);
+	SPI_DT_SPEC_GET(DT_NODELABEL(generic_tft_spi_dev), SPI_OP);
 #endif
 
 
@@ -96,6 +115,12 @@ unsigned long micros(void) {
 #endif
  }
 
+extern "C" {
+	extern int camera_ext_clock_enable(void);
+}
+
+
+
 #if defined(ATP)
 static const struct gpio_dt_spec generic_tft_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
     DT_PATH(zephyr_user), ili9341atp_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
@@ -117,14 +142,16 @@ ILI9341_GIGA_n tft(&generic_tft_spi, &generic_tft_pins[0], &generic_tft_pins[1],
 struct video_buffer *buffers[CONFIG_VIDEO_BUFFER_POOL_NUM_MAX];
 struct video_buffer *vbuf = nullptr;
 const struct device *video_dev;
+//struct video_buffer *rgb_buffer = nullptr;
 
 
 // map() transforms input "x" from one numerical range to another.  For example, if
 extern void WaitForUserInput(uint32_t timeout);
 extern void show_all_gpio_regs();
 extern void initialize_display();
-extern int initialize_video();
+extern int initialize_video(uint8_t camera_index = 0);
 extern void	draw_scaled_up_image(uint16_t *pixels);
+extern void convert_bayer_image_to_rgb565(uint8_t *bayer, uint16_t *rgb, uint16_t width, uint16_t height);
 
 #if (CONFIG_VIDEO_SOURCE_CROP_WIDTH > 0) && (CONFIG_VIDEO_SOURCE_CROP_WIDTH <= CONFIG_VIDEO_FRAME_WIDTH) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT > 0) && (CONFIG_VIDEO_SOURCE_CROP_HEIGHT <= CONFIG_VIDEO_FRAME_HEIGHT)
 #define CAMERA_IMAGE_WIDTH (CONFIG_VIDEO_SOURCE_CROP_WIDTH)
@@ -134,9 +161,9 @@ extern void	draw_scaled_up_image(uint16_t *pixels);
 #define CAMERA_IMAGE_HEIGHT (CONFIG_VIDEO_FRAME_HEIGHT)
 #endif
 
-#if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
+//#if defined(ILI9341_USE_FIXED_BUFFER) || defined(CAMERA_USE_FIXED_BUFFER)
 uint16_t frame_buffer[CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT];
-#endif
+//#endif
 
 //#if defined(TRY_CAPTURE_SNAPSHOT)
 //#if (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) <= (320*240)
@@ -157,10 +184,52 @@ struct video_selection vselPan = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_CROP};
 struct video_selection vselNativeSize = {VIDEO_BUF_TYPE_OUTPUT, VIDEO_SEL_TGT_NATIVE_SIZE};
 
 
+////////////////////////////////
+#define LED0_NODE DT_ALIAS(led0)
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+inline uint16_t color565(uint8_t r, uint8_t g, uint8_t b) 
+{
+	return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+
+////////////////////////////
+void blink_led(uint32_t sleep_time, uint32_t count) {
+	int ret;
+	bool led_state = true;
+
+	static bool led_initialized = false;
+
+	if (!led_initialized) {
+		if (!gpio_is_ready_dt(&led)) {
+			return;
+		}
+
+		ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+		if (ret < 0) {
+			return;
+		}
+		led_initialized = true;
+	}
+	while (count) {
+		gpio_pin_toggle_dt(&led);
+		led_state = !led_state;
+		k_msleep(sleep_time);
+		gpio_pin_toggle_dt(&led);
+		led_state = !led_state;
+		k_msleep(sleep_time);
+		count--;
+	}
+}
+
+
 int main(void)
 {
 
-	int ret;
+	
+	blink_led(500, 1);
 
 	// Start up the Serial
 	USBSerial.begin();
@@ -233,7 +302,7 @@ int main(void)
 //		}
 //		if (err) continue;
 //		#else
-		err = video_dequeue(video_dev, &vbuf, K_MSEC(10000));
+		err = video_dequeue(video_dev, &vbuf, K_MSEC(250/*10000*/));
 		read_frame_sum += (micros() - start_time);
 		//printk("Dequeue: %lu\n", micros() - start_time);
 		if (err) {
@@ -261,23 +330,40 @@ int main(void)
 //#if defined(TRY_CAPTURE_SNAPSHOT)
 //		uint16_t *pixels = frame_buffer;
 //#else
-        uint16_t *pixels = (uint16_t *) vbuf->buffer;
-//#endif
-        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
-            pixels[i] = __REVSH(pixels[i]);
-        }
+		if (video_pixel_format == VIDEO_PIX_FMT_GREY) {
+			tft.writeGreyRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint8_t*)vbuf->buffer);
 
-		start_time = micros();
-		if (scale_up) {
-			draw_scaled_up_image(pixels);
+		} else if (video_pixel_format == VIDEO_PIX_FMT_SBGGR8) {
+			convert_bayer_image_to_rgb565((uint8_t*)vbuf->buffer, frame_buffer, CAMERA_IMAGE_WIDTH, CAMERA_IMAGE_HEIGHT);
+			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH-4, CONFIG_VIDEO_FRAME_HEIGHT-4, frame_buffer);
+
 		} else {
-			#ifdef TRY_WRITERECTCB
-			write_rect_active = true;
-			tft.writeRectCB(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels, &writerectCallback);
-			while (write_rect_active) k_sleep(K_USEC(59));
-			#else
-			tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels);
-			#endif
+	        uint16_t *pixels = (uint16_t *) vbuf->buffer;
+	//#endif
+			if (video_pixel_format == VIDEO_PIX_FMT_Y4) {
+		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
+			        uint8_t gray_color = (pixels[i] & 0x0f) | ((pixels[i] >> 4) & 0xf0);
+			        //uint8_t gray_color = ((pixels[i] & 0x0f) << 4) | ((pixels[i] >> 8) & 0x0f);
+			        pixels[i] = color565(gray_color, gray_color, gray_color);
+		        }
+			} else {
+		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
+		            pixels[i] = __REVSH(pixels[i]);
+		        }
+	       } 
+
+			start_time = micros();
+			if (scale_up) {
+				draw_scaled_up_image(pixels);
+			} else {
+				#ifdef TRY_WRITERECTCB
+				write_rect_active = true;
+				tft.writeRectCB(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels, &writerectCallback);
+				while (write_rect_active) k_sleep(K_USEC(59));
+				#else
+				tft.writeRect(0, 0, CAMERA_IMAGE_WIDTH, CONFIG_VIDEO_FRAME_HEIGHT, (uint16_t*)pixels);
+				#endif
+			}
 		}
 		write_rect_sum += micros() - start_time;
 		//printk("writeRect: %d %lu\n", frame_count, micros() - start_time);
@@ -349,13 +435,57 @@ void initialize_display() {
 	k_sleep(K_MSEC(500));
 //	WaitForUserInput(2000);
 
+#if 0
+	#define RECT_WIDTH 31
+	uint8_t temp_rect[RECT_WIDTH*RECT_WIDTH]; 
+	for (uint16_t i = 0; i < 256; i += 32) {
+		memset(temp_rect, i, sizeof(temp_rect));
+		tft.writeGreyRect(i, 0, RECT_WIDTH, RECT_WIDTH, temp_rect);
+		tft.writeGreyRect(i, RECT_WIDTH, RECT_WIDTH, RECT_WIDTH, temp_rect);
+	}
+	WaitForUserInput(10000);
+#endif
 
 }
+
+#ifdef USE_CAMERA_LISTS
+#if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
+//#warning "cameras defined"
+
+#define COUNT_DT_CAMERAS DT_PROP_LEN(DT_PATH(zephyr_user), cameras)
+
+#define DECLARE_CAMERA_N(n, p, i) DEVICE_DT_GET(DT_PHANDLE_BY_IDX(n, p, i)),                                                                     \
+
+/* Declare SPI, SPI1, SPI2, ... */
+const struct device *const dt_camera_sensors[] = {
+	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), cameras, DECLARE_CAMERA_N)
+};
+
+#undef DECLARE_CAMERA_N
+#endif
+
+
+#if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
+//#warning "dcims defined"
+
+#define COUNT_DT_DCMIS DT_PROP_LEN(DT_PATH(zephyr_user), dcmis)
+
+#define DECLARE_DCMIS_N(n, p, i) DEVICE_DT_GET(DT_PHANDLE_BY_IDX(n, p, i)),                                                                     \
+
+/* Declare SPI, SPI1, SPI2, ... */
+const struct device *const dt_dcmis[] = {
+	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), dcmis, DECLARE_DCMIS_N)
+};
+
+#undef DECLARE_CAMERA_N
+
+#endif
+#endif
 
 //----------------------------------------------------------------------------------
 // iniitialize the camera/video
 //----------------------------------------------------------------------------------
-int initialize_video() {
+int initialize_video(uint8_t camera_index) {
 	struct video_format fmt;
 	struct video_caps caps;
 	enum video_buf_type type = VIDEO_BUF_TYPE_OUTPUT;
@@ -363,11 +493,39 @@ int initialize_video() {
 	int i = 0;
 	int ret = 0;
 
+#ifdef DEFER_INIT_CAMERA
+	camera_ext_clock_enable();
+#endif
+
 	// lets get camera information
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
+	video_dev = dt_dcmis[camera_index];
+
+#elif DT_HAS_CHOSEN(zephyr_camera)
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
+#endif
 	if (!device_is_ready(video_dev)) {
 		printk("ERROR: %s device is not ready\n",  video_dev->name);
-		return 0;
+
+		if ((ret = device_init(video_dev)) < 0) {
+			printk("device_init camera(%p) failed:%d\n", video_dev, ret);
+			return 0;
+		}
+	}
+
+	const struct device *video_dev_sensor = nullptr;
+#if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), dcmis)
+	video_dev_sensor = dt_camera_sensors[camera_index];
+#elif DT_HAS_CHOSEN(zephyr_camera_sensor)
+	video_dev_sensor = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera_sensor));
+#endif
+	if (video_dev_sensor) {
+		if (!device_is_ready(video_dev_sensor)) {
+			if ((ret = device_init(video_dev_sensor)) < 0) {
+				printk("device_init camera sensor(%p) failed:%d\n", video_dev_sensor, ret);
+				return false;
+			}
+		}
 	}
 
 	printk("INFO: - Device name: %s\n",  video_dev->name);
@@ -379,7 +537,36 @@ int initialize_video() {
 		return 0;
 	}
 
-	printk("INFO: - Capabilities:\n") ;
+	/* lets see if we can set snapshot mode */
+#if defined(VIDEO_CID_SNAPSHOT_MODE)
+	printk("Try to set Snapshot mode...\n");
+	struct video_ctrl_query cq = {.dev = video_dev, .id = VIDEO_CID_SNAPSHOT_MODE};
+	if (video_query_ctrl(&cq) == 0) {
+		printk("Before:\n");
+		video_print_ctrl(&cq);
+	}
+
+	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 2};
+	if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
+		printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
+	}
+
+	/* lets try to retrieve the value */
+	if (video_get_ctrl(video_dev, &ctrl_snapshot) < 0) {
+		printk("Failed to retrieve video_control VIDEO_CID_SNAPSHOT_MODE");
+	} else {
+		printk("After Video Snapshot mode: %u\n", ctrl_snapshot.val);
+	}
+
+
+#endif
+
+#if 0
+  	LOG_INF("- Capabilities: min buf:%u line: %d %d", caps.min_vbuf_count, 
+	          caps.min_line_count, caps.max_line_count);
+#else
+  	LOG_INF("- Capabilities: min buf:%u", caps.min_vbuf_count);
+#endif	
 	while (caps.format_caps[i].pixelformat) {
 		const struct video_format_cap *fcap = &caps.format_caps[i];
 		/* four %c to string */
@@ -391,6 +578,7 @@ int initialize_video() {
 		i++;
 	}
 
+
 	/* Get default/native format */
 	fmt.type = type;
 	if (video_get_format(video_dev, &fmt)) {
@@ -401,7 +589,7 @@ int initialize_video() {
 	/* Set format */
 	fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
 	fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
-	fmt.pixelformat = VIDEO_PIX_FMT_RGB565;
+	fmt.pixelformat = video_pixel_format;
 	printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
 
 	if (video_set_format(video_dev, &fmt)) {
@@ -432,10 +620,13 @@ int initialize_video() {
 		(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
 		fmt.pitch);
 
+#if 0
 	if (caps.min_line_count != LINE_COUNT_HEIGHT) {
 		printk("ERROR: Partial framebuffers not supported by this sample\n") ;
 		return 0;
 	}
+#endif
+	
 	/* Size to allocate for each buffer */
 	/* lets ask for the actual current format */
 	if ((ret = video_get_format(video_dev, &fmt)) != 0) {
@@ -449,13 +640,14 @@ int initialize_video() {
 	bsize = fmt.pitch * fmt.height;
 
 	/* Alloc video buffers and enqueue for capture */
-	printk("Initialze video buffer list (%u)\n",  ARRAY_SIZE(buffers));
+	printk("Initialze video buffer list cnt:%u size:%u %u\n",  ARRAY_SIZE(buffers), bsize, fmt.size);
 	for (i = 0; i < ARRAY_SIZE(buffers); i++) {
 		buffers[i] = video_buffer_aligned_alloc(bsize, CONFIG_VIDEO_BUFFER_POOL_ALIGN,
 							K_FOREVER);
 		#ifdef CAMERA_USE_FIXED_BUFFER
 		if ((i == 0) &&  (buffers[i] != NULL)) {
-			// REAL hack change the buffer over to our fixed buffer...
+			// REAL hack change the buffer over to our fixed buffer..
+			printk("  use %p instead of %p\n", buffers[i], frame_buffer);
 			buffers[i]->buffer = (uint8_t *)frame_buffer;
 		}
 		#endif
@@ -466,15 +658,18 @@ int initialize_video() {
 			return 0;
 		}
 		buffers[i]->type = type;
-		video_enqueue(video_dev, buffers[i]);
+		if (video_enqueue(video_dev, buffers[i]) < 0) {
+			printk("Error video_enqueue(%p %p)\n", video_dev, buffers[i]);
+		}
 	}
+
 
 //	#if defined(TRY_CAPTURE_SNAPSHOT) && (CAMERA_IMAGE_WIDTH * CAMERA_IMAGE_HEIGHT) > (320*240)
 //	frame_buffer = (uint16_t*)buffers[ARRAY_SIZE(buffers) - 1]->buffer;
 //	#endif
 
 	/* Set controls */
-	struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = 1};
+	struct video_control ctrl = {.id = VIDEO_CID_HFLIP, .val = HFLIP};
 
 	if (IS_ENABLED(CONFIG_VIDEO_HFLIP)) {
 		video_set_ctrl(video_dev, &ctrl);
@@ -482,12 +677,44 @@ int initialize_video() {
 
 	if (IS_ENABLED(CONFIG_VIDEO_VFLIP)) {
 		ctrl.id = VIDEO_CID_VFLIP;
+		ctrl.val = VFLIP;
 		video_set_ctrl(video_dev, &ctrl);
 	}
 
-#ifdef TRY_CAPTURE_SNAPSHOT
-	video_set_snapshot_mode(video_dev, true);
+#ifdef FRAME_RATE
+	struct video_frmival frmival;
+	struct video_frmival_enum fie;
+
+	printk("Request Frame Rate: %u\n", FRAME_RATE);
+
+	frmival.denominator = FRAME_RATE;
+	frmival.numerator = 1;
+
+	fie.format = &fmt;
+	fie.discrete = frmival;
+	fie.type = VIDEO_FRMIVAL_TYPE_DISCRETE;
+	video_closest_frmival(video_dev, &fie);
+	printk("Closest dev: t:%u %u %u\n", fie.type, fie.discrete.numerator, fie.discrete.denominator);
+
+	if (video_dev_sensor) {
+		fie.format = &fmt;
+		fie.discrete = frmival;
+		fie.type = VIDEO_FRMIVAL_TYPE_DISCRETE;
+		video_closest_frmival(video_dev_sensor, &fie);
+		printk("Closest sensor: t:%u %u %u\n", fie.type, fie.discrete.numerator, fie.discrete.denominator);
+	}
+
+	if (video_set_frmival(video_dev, &frmival) < 0){
+		printk("ERROR: Unable to set up frame rate\n") ;
+	}
+
+	video_get_frmival(video_dev, &frmival);
+	printk("Returned frame rate: %u %u = %u\n", frmival.numerator, frmival.denominator, frmival.denominator / frmival.numerator);
+
 #endif
+//#ifdef TRY_CAPTURE_SNAPSHOT
+//	video_set_snapshot_mode(video_dev, true);
+//#endif
 	/* Start video capture */
 	printk("Starting  capture\n");
 	if (video_stream_start(video_dev, type)) {
@@ -551,7 +778,13 @@ void draw_scaled_up_image(uint16_t *pixels) {
 void WaitForUserInput(uint32_t timeout) {
     USBSerial.print("Hit key to continue\n");
     uint32_t time_start = millis();
-    while ((USBSerial.read() == -1) && ((uint32_t)(millis() - time_start)  < timeout)) ;
+    int ich;
+    while (((ich = USBSerial.read()) == -1) && ((uint32_t)(millis() - time_start)  < timeout)) ;
+    if (ich == 'p') {
+    	USBSerial.print("Paused\n");
+	    while (USBSerial.read() != -1) ;
+	    while (USBSerial.read() == -1) ;
+    }
     while (USBSerial.read() != -1) ;
     USBSerial.print("Done!\n");
 }
@@ -632,6 +865,69 @@ void show_all_gpio_regs() {
 }
 
 
+// Note The resulting image will lose 4 rows and columns 324x244 -> 320x240
+#define BAYER_INDEX(x, y, w) ((y) * (w) + (x))
+
+void convert_bayer_image_to_rgb565(uint8_t *bayer, uint16_t *rgb, uint16_t width, uint16_t height) {
+  uint16_t r, g, b;
+  for (uint16_t y = 2; y < (height - 2); y++) {
+    for (uint16_t x = 2; x < (width - 2); x++) {
+#ifdef MIRROR_FLIP_CAMERA
+      if (y & 1) {  // GREEN BLUE row
+        if (x & 1) { // red
+          b = bayer[BAYER_INDEX(x, y, width)];
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          r = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+
+        } else {  // green
+          b = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          r = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        }
+
+      } else {        // RED GREEN row)
+        if (x & 1) {  //green
+          b = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          r = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        } else {  // blue
+          b = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          r = bayer[BAYER_INDEX(x, y, width)];
+        }
+      }
+#else
+      if (y & 1) {  // GREEN RED row
+        if (x & 1) { // red
+            r = bayer[BAYER_INDEX(x, y, width)];
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          b = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+
+        } else {  // green
+          r = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          b = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        }
+
+      } else {        // BLUE GREEN row)
+        if (x & 1) {  //green
+          r = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)]) / 2;
+          g = bayer[BAYER_INDEX(x, y, width)];
+          b = (bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 2;
+        } else {  // blue
+          r = (bayer[BAYER_INDEX(x + 1, y + 1, width)] + bayer[BAYER_INDEX(x + 1, y - 1, width)] + bayer[BAYER_INDEX(x - 1, y + 1, width)] + bayer[BAYER_INDEX(x - 1, y - 1, width)]) / 4;
+          g = (bayer[BAYER_INDEX(x, y + 1, width)] + bayer[BAYER_INDEX(x, y - 1, width)] + bayer[BAYER_INDEX(x + 1, y, width)] + bayer[BAYER_INDEX(x - 1, y, width)]) / 4;
+          b = bayer[BAYER_INDEX(x, y, width)];
+        }
+      }
+#endif
+      *rgb++ = CL(r, g, b);
+    }
+  }
+
+}
+
+
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 extern "C" {
@@ -660,12 +956,14 @@ int camera_ext_clock_enable(void)
 	return 0;
 }
 
+#ifndef DEFER_INIT_CAMERA
 SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
+#endif
 
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+Z_GENERIC_SECTION(SDRAM1) static uint8_t __aligned(32) smh_pool[4*1024*1024];
 
 int smh_init(void) {
     int ret = 0;

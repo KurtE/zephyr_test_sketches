@@ -17,7 +17,7 @@
 #include <zephyr/logging/log.h>
 
 #include "usb_serial.h"
-#define GRAY_IMAGE
+//#define GRAY_IMAGE
 
 #ifdef CONFIG_TEST
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
@@ -37,6 +37,10 @@ extern void send_raw_image(struct video_buffer *vbuf, uint16_t frame_width, uint
 extern void show_all_gpio_regs();
 
 #define F(x) x
+
+
+#ifndef CONFIG_HWINFO_IMXRT
+
 
 static const struct gpio_dt_spec pin_name_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
 	DT_PATH(zephyr_user), all_pin_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
@@ -100,6 +104,7 @@ PinStatus digitalRead(PinNames pinNumber) {
   return (gpio_pin_get_dt(&pin_name_pins[pinNumber]) == 1) ? HIGH : LOW;
 }
 
+#endif
 
 #define delay(ms) k_sleep(K_MSEC(ms))
 
@@ -122,6 +127,7 @@ int main(void)
 
 	printf("Hello world\n");
 
+#ifndef CONFIG_HWINFO_IMXRT
 	pinMode(PC_13, OUTPUT);
 	digitalWrite(PC_13, LOW);
 	delay(10);
@@ -129,7 +135,7 @@ int main(void)
 	delay(10);
 
 	show_all_gpio_regs();
-
+#endif
 	video_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_camera));
 	if (!device_is_ready(video_dev)) {
 		LOG_ERR("%s: video device is not ready", video_dev->name);
@@ -587,6 +593,8 @@ void maybe_send_image(struct video_buffer *vbuf, uint16_t frame_width, uint16_t 
 	}
 }
 
+//#ifndef CONFIG_HWINFO_IMXRT
+#if 0
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control.h>
@@ -617,12 +625,12 @@ int camera_ext_clock_enable(void)
 
 SYS_INIT(camera_ext_clock_enable, POST_KERNEL, CONFIG_CLOCK_CONTROL_PWM_INIT_PRIORITY);
 
-
+#endif
 
 #if defined(CONFIG_SHARED_MULTI_HEAP)
 #include <zephyr/multi_heap/shared_multi_heap.h>
 
-__stm32_sdram1_section static uint8_t __aligned(32) smh_pool[4*1024*1024];
+Z_GENERIC_SECTION(SDRAM1) static uint8_t __aligned(32) smh_pool[4*1024*1024];
 
 int smh_init(void) {
     int ret = 0;
@@ -647,6 +655,12 @@ int smh_init(void) {
 SYS_INIT(smh_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 #endif /*CONFIG_SHARED_MULTI_HEAP*/
 
+#ifdef CONFIG_HWINFO_IMXRT
+
+void show_all_gpio_regs() {
+}
+
+#else
 void print_gpio_regs(const char *name, GPIO_TypeDef *port) {
   LOG_INF("GPIO%s(%p) %08X %08X %08x", name, port, port->MODER, port->AFR[0], port->AFR[1]);
   delay(25);
@@ -724,3 +738,4 @@ void show_all_gpio_regs() {
   print_gpio_regs("K", (GPIO_TypeDef *)GPIOK_BASE);
 }
 
+#endif

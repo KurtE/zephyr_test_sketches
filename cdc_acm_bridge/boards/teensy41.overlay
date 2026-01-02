@@ -1,0 +1,20 @@
+/ {
+	chosen {
+		zephyr,console = &lpuart6;
+		zephyr,shell-uart = &lpuart6;
+		zephyr,cdc-acm-uart0 = &lpuart6;
+	};
+};
+
+
+&lpuart4 {
+	current-speed = <115200>;
+	status = "okay";
+};
+
+
+&lpuart6 {
+	current-speed = <115200>;
+	status = "okay";
+};
+

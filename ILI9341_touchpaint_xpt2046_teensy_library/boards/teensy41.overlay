@@ -1,0 +1,76 @@
+/*
+ * Copyright (c) 2021 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+/ {
+	aliases {
+	};
+	zephyr,user {
+		ili9341-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>,	/* CS PIN 7 4.1 */
+						<&gpio2 11 GPIO_ACTIVE_HIGH>,	/* DC PIN 9 4.1 */
+						<&gpio2 16 GPIO_ACTIVE_HIGH>,	/* RST Pin 8 */
+						<&gpio2 10 GPIO_ACTIVE_LOW>;	/* touch cs Pin 6 */
+
+		xpt2046-gpios = <&gpio3 23 GPIO_ACTIVE_HIGH>,
+				<&gpio4 8 GPIO_ACTIVE_HIGH>;  // debug pin D5
+	};
+	chosen {
+		//uart,passthrough = &lpuart4; // Teensy pins 7(RX) 8(TX)
+		//zephyr,touch = &xpt2046;
+
+
+	};
+};
+
+&lpuart4 {
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&pinctrl {
+
+	/* LPSPI4 MISO, MOSI, SCK, CS on Teensy-Pins 12/11/13/10 */
+	pinmux_lpspi4: pinmux_lpspi4 {
+		group0 {
+			pinmux = <&iomuxc_gpio_b0_03_lpspi4_sck>,
+				<&iomuxc_gpio_b0_01_lpspi4_sdi>,
+				<&iomuxc_gpio_b0_02_lpspi4_sdo>;
+			drive-strength = "r0-6";
+			slew-rate = "fast";
+			nxp,speed = "100-mhz";
+		};
+	};
+};
+
+&lpspi4 {
+	transfer-delay = <50>;
+	status = "okay";	
+	pinctrl-0 = <&pinmux_lpspi4>;
+	pcs-sck-delay= <25>;
+	sck-pcs-delay= <25>;
+	pinctrl-names = "default";
+
+	//cs-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>, <&gpio2 10 GPIO_ACTIVE_LOW>;
+  
+	ili9341_spi_dev: ili9341_spi_dev@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+	};
+
+	xpt2046_spi_dev: xpt2046_spi_dev@1 {
+		compatible = "vnd,spi-device";
+		reg = <1>;
+		spi-max-frequency = <2000000>;
+	};
+
+};

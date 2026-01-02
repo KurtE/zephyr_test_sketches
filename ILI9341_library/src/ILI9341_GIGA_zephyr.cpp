@@ -1173,6 +1173,106 @@ void ILI9341_GIGA_n::writeRect8BPP(int16_t x, int16_t y, int16_t w, int16_t h,
   endSPITransaction();
 }
 
+
+// writeRect8BPP -  write 8 bit per pixel paletted bitmap
+//          bitmap data in array at pixels, one byte per
+//pixel
+//          color palette data in array at palette
+void ILI9341_GIGA_n::writeRect8BPP_4BITB(int16_t x, int16_t y, int16_t w, int16_t h,
+                                const uint16_t *pixels,
+                                const uint16_t *palette) {
+  // Serial.printf("\nWR8: %d %d %d %d %x\n", x, y, w, h, (uint32_t)pixels);
+  x += _originx;
+  y += _originy;
+  uint8_t pixel;
+
+  uint16_t x_clip_left =
+      0; // How many entries at start of colors to skip at start of row
+  uint16_t x_clip_right =
+      0; // how many color entries to skip at end of row for clipping
+  // Rectangular clipping
+
+  // See if the whole thing out of bounds...
+  if ((x >= _displayclipx2) || (y >= _displayclipy2))
+    return;
+  if (((x + w) <= _displayclipx1) || ((y + h) <= _displayclipy1))
+    return;
+
+  // In these cases you can not do simple clipping, as we need to synchronize
+  // the colors array with the
+  // We can clip the height as when we get to the last visible we don't have to
+  // go any farther.
+  // also maybe starting y as we will advance the color array.
+  if (y < _displayclipy1) {
+    int dy = (_displayclipy1 - y);
+    h -= dy;
+    pixels += (dy * w); // Advance color array to
+    y = _displayclipy1;
+  }
+
+  if ((y + h - 1) >= _displayclipy2)
+    h = _displayclipy2 - y;
+
+  // For X see how many items in color array to skip at start of row and
+  // likewise end of row
+  if (x < _displayclipx1) {
+    x_clip_left = _displayclipx1 - x;
+    w -= x_clip_left;
+    x = _displayclipx1;
+  }
+  if ((x + w - 1) >= _displayclipx2) {
+    x_clip_right = w;
+    w = _displayclipx2 - x;
+    x_clip_right -= w;
+  }
+// Serial.printf("WR8C: %d %d %d %d %x- %d %d\n", x, y, w, h, (uint32_t)pixels,
+// x_clip_right, x_clip_left);
+#ifdef ENABLE_ILI9341_FRAMEBUFFER
+  if (_use_fbtft) {
+    updateChangedRange(
+        x, y, w, h); // update the range of the screen that has been changed;
+    uint16_t *pfbPixel_row = &_pfbtft[y * _width + x];
+    for (; h > 0; h--) {
+      pixels += x_clip_left;
+      uint16_t *pfbPixel = pfbPixel_row;
+      for (int i = 0; i < w; i++) {
+        *pfbPixel++ = palette[*pixels++];
+      }
+      pixels += x_clip_right;
+      pfbPixel_row += _width;
+    }
+    return;
+  }
+#endif
+
+  beginSPITransaction(_SPI_CLOCK);
+  setAddr(x, y, x + w - 1, y + h - 1);
+  writecommand_cont(ILI9341_RAMWR);
+  for (y = h; y > 0; y--) {
+    pixels += x_clip_left;
+    // Serial.printf("%x: ", (uint32_t)pixels);
+    for (x = w; x > 1; x--) {
+      // Serial.print(*pixels, DEC);
+      pixel = (*pixels & 0xf) | (*pixels >> 4);
+      writedata16_cont(palette[pixel]);
+      static uint8_t DEBUG_COUNT = 8;
+      if (DEBUG_COUNT) {
+        if (DEBUG_COUNT == 8) printk("ILI Output: ");
+        printk(" %04x:%02x:%04X", *pixels, pixel, palette[pixel] );
+        DEBUG_COUNT--;
+        if (!DEBUG_COUNT) printk("\n");
+      }
+      pixels++;
+    }
+    // Serial.println(*pixels, DEC);
+    pixel = (*pixels & 0xf) | (*pixels >> 4);
+    pixels++;
+    writedata16_last(palette[pixel]);
+    pixels += x_clip_right;
+  }
+  endSPITransaction();
+}
+
 // writeRect4BPP - 	write 4 bit per pixel paletted bitmap
 //					bitmap data in array at pixels, 4 bits per
 //pixel
@@ -1352,8 +1452,8 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
   _SPI_CLOCK = spi_clock;           // #define ILI9341_SPICLOCK 30000000
   _SPI_CLOCK_READ = spi_clock_read; //#define ILI9341_SPICLOCK_READ 2000000
 
-  //printk("Before SPI %p begin\n", _pspi);
-//  _pspi->begin();
+  printk("Before SPI %p begin\n", _pspi);
+  //  _pspi->begin();
   //printk("\tAfter\n");
 
 // Lets see if the driver will drive it properly...
@@ -1400,14 +1500,17 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
     outputToSPI(0x0); 
     k_sleep(K_MSEC(5));
   beginSPITransaction(_SPI_CLOCK/4);
-
+  printk("tft::begin Before output init commands\n");
   const uint8_t *addr = init_commands;
   while (1) {
     uint8_t count = *addr++;
     if (count-- == 0)
       break;
-    if (_pserDBG) _pserDBG->printf("\tWC:%x ", *addr);
+    //if (_pserDBG) _pserDBG->printf("\tWC:%x ", *addr);
+    printk("\t#:%u WC:%x ", count, *addr);
+    
     writecommand_cont(*addr++);
+    printk("*");
     setDataMode();
 
     if (count) {
@@ -1419,11 +1522,11 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
       }
       addr += count;
     }
-//    while (count-- > 0) {
-//      if (_pserDBG) _pserDBG->printf(" %x", *addr);
-//      writedata8_cont(*addr++);
-//    }
-//    if (_pserDBG) _pserDBG->printf("\n", *addr);
+   while (count-- > 0) {
+     if (_pserDBG) _pserDBG->printf(" %x", *addr);
+     writedata8_cont(*addr++);
+   }
+   if (_pserDBG) _pserDBG->printf("\n", *addr);
   }
   writecommand_last(ILI9341_SLPOUT); // Exit Sleep
   endSPITransaction();
@@ -1433,6 +1536,7 @@ void ILI9341_GIGA_n::begin(uint32_t spi_clock, uint32_t spi_clock_read) {
   endSPITransaction();
 
   // Serial.println("_t3n::begin - completed"); Serial.flush();
+  printk("TFT:being - completed\n");
   setRotation(0); 
 }
 
