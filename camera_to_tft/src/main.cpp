@@ -58,10 +58,10 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #include <zephyr/multi_heap/shared_multi_heap.h>
 
 
-//uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
+uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
 
 // HMB01b0 4 bit mode
-uint32_t video_pixel_format = VIDEO_PIX_FMT_Y4;
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_Y8P16;
 
 // 8 bit mode
 //uint32_t video_pixel_format = VIDEO_PIX_FMT_GREY;
@@ -340,7 +340,7 @@ int main(void)
 		} else {
 	        uint16_t *pixels = (uint16_t *) vbuf->buffer;
 	//#endif
-			if (video_pixel_format == VIDEO_PIX_FMT_Y4) {
+			if (video_pixel_format == VIDEO_PIX_FMT_Y8P16) {
 		        for (size_t i=0; i < (CAMERA_IMAGE_WIDTH*CONFIG_VIDEO_FRAME_HEIGHT); i++) {
 			        uint8_t gray_color = (pixels[i] & 0x0f) | ((pixels[i] >> 4) & 0xf0);
 			        //uint8_t gray_color = ((pixels[i] & 0x0f) << 4) | ((pixels[i] >> 8) & 0x0f);
@@ -405,6 +405,8 @@ void initialize_display() {
 #ifdef USE_ST7796
   tft.begin();
   tft.setRotation(1);
+  tft.invertDisplay(true); // Capacitive touch version.
+
 #else
 	tft.begin();
 	tft.setRotation(1);
@@ -546,7 +548,7 @@ int initialize_video(uint8_t camera_index) {
 		video_print_ctrl(&cq);
 	}
 
-	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 2};
+	struct video_control ctrl_snapshot = {.id = VIDEO_CID_SNAPSHOT_MODE, .val = 1};
 	if (video_set_ctrl(video_dev, &ctrl_snapshot) < 0) {
 		printk("Failed to use video_control to set VIDEO_CID_SNAPSHOT_MODE");
 	}

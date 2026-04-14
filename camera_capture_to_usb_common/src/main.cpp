@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2019 Linaro Limited
  * Copyright 2025 NXP
@@ -34,7 +35,19 @@
 // #include "usb_serial.h"
 #define GRAY_IMAGE
 #define FRAME_RATE 60
-#define SNAPSHOT_MODE 0
+#define SNAPSHOT_MODE 1
+
+uint32_t  video_pixel_format = VIDEO_PIX_FMT_RGB565;
+
+// HMB01b0 4 bit mode
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_Y8P16;
+
+// 8 bit mode
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_GREY;
+
+// 8 bit Bayer
+//uint32_t video_pixel_format = VIDEO_PIX_FMT_SBGGR8;
+
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -191,6 +204,15 @@ int initialize_video(uint8_t camera_index) {
   camera_ext_clock_enable();
 #endif
 
+  // quick hack
+#if 0
+  printk("Before manual setting RESET PWDN");
+  pinMode(PE_3, OUTPUT); // reset
+  digitalWrite(PE_3, HIGH);
+  pinMode(PD_4, OUTPUT); //pwndn
+  digitalWrite(PD_4, LOW); 
+#endif
+
   // lets get camera information
 #if defined(USE_CAMERA_LISTS) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), cameras)
   video_dev = dt_dcmis[camera_index];
@@ -283,7 +305,7 @@ int initialize_video(uint8_t camera_index) {
   /* Set format */
   fmt.width = CONFIG_VIDEO_FRAME_WIDTH;
   fmt.height = CONFIG_VIDEO_FRAME_HEIGHT;
-  fmt.pixelformat = VIDEO_PIX_FMT_GREY; //VIDEO_PIX_FMT_RGB565;
+  fmt.pixelformat = video_pixel_format;
   printk("updated to: %u %u %x\n", fmt.width, fmt.height, fmt.pixelformat);
 
   if (video_set_format(video_dev, &fmt)) {
@@ -396,7 +418,7 @@ int initialize_video(uint8_t camera_index) {
 //  video_set_snapshot_mode(video_dev, true);
 //#endif
   /* Start video capture */
-  printk("Starting  capture\n");
+  printk("Starting  capturez printk Reset: %u PWDN:%u\n", digitalRead(PE_3), digitalRead(PC_13));
   if (video_stream_start(video_dev, type)) {
     printk("ERROR: Unable to start capture (interface)\n") ;
     return 0;
@@ -416,6 +438,7 @@ int initialize_video(uint8_t camera_index) {
       vsel.rect.left, vsel.rect.top, vsel.rect.width, vsel.rect.height);
   }
 #endif
+
 
   return 1;
 
@@ -629,56 +652,92 @@ void send_image(struct video_buffer *vbuf, uint16_t frame_width,
   }
 
 #define PIX_PER_WRITE 20
-#ifdef GRAY_IMAGE
-  uint8_t *pfb = (uint8_t *)frameBuffer;
-  uint8_t *pfbRow = pfb;
-  uint8_t img[3 * PIX_PER_WRITE]; // See if it writes out faster
-  uint8_t img_index = 0;
-  for (int y = frame_height - 1; y >= 0; y--) { // iterate image array
-    pfb = pfbRow;
-    for (int x = 0; x < frame_width; x++) {
-      // r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
-      img[img_index + 2] = *pfb;
-      img[img_index + 1] = *pfb;
-      img[img_index + 0] = *pfb;
-      img_index += 3;
-      if (img_index == sizeof(img)) {
+//#ifdef GRAY_IMAGE
+  if (video_pixel_format == VIDEO_PIX_FMT_GREY) {
+
+    uint8_t *pfb = (uint8_t *)frameBuffer;
+    uint8_t *pfbRow = pfb;
+    uint8_t img[3 * PIX_PER_WRITE]; // See if it writes out faster
+    uint8_t img_index = 0;
+    for (int y = frame_height - 1; y >= 0; y--) { // iterate image array
+      pfb = pfbRow;
+      for (int x = 0; x < frame_width; x++) {
+        // r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
+        img[img_index + 2] = *pfb;
+        img[img_index + 1] = *pfb;
+        img[img_index + 0] = *pfb;
+        img_index += 3;
+        if (img_index == sizeof(img)) {
+          USBSerial.write(img, img_index);
+          k_sleep(K_USEC(8));
+          img_index = 0;
+        }
+        pfb++;
+      }
+      if (img_index != 0) {
         USBSerial.write(img, img_index);
         k_sleep(K_USEC(8));
         img_index = 0;
       }
-      pfb++;
+      USBSerial.write(bmpPad,
+                      (4 - (frame_width * 3) % 4) % 4); // and padding as needed
+      pfbRow += frame_width;
+      if ((y & 0x3) == 0x3)
+        printk("*");
     }
-    if (img_index != 0) {
-      USBSerial.write(img, img_index);
-      k_sleep(K_USEC(8));
-      img_index = 0;
+    printk("\n");
+  } else if (video_pixel_format == VIDEO_PIX_FMT_Y8P16) {
+    uint8_t *pfb = (uint8_t *)frameBuffer;
+    uint8_t *pfbRow = pfb;
+    uint8_t img[3 * PIX_PER_WRITE]; // See if it writes out faster
+    uint8_t img_index = 0;
+    for (int y = frame_height - 1; y >= 0; y--) { // iterate image array
+      pfb = pfbRow;
+      for (int x = 0; x < frame_width; x++) {
+        // r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
+        uint8_t gray_color =  (*pfb & 0x0f) | ((*(pfb+1) & 0x0f) << 4);
+        img[img_index + 2] = gray_color;
+        img[img_index + 1] = gray_color;
+        img[img_index + 0] = gray_color;
+        pfb += 2;
+        img_index += 3;
+        if (img_index == sizeof(img)) {
+          USBSerial.write(img, img_index);
+          k_sleep(K_USEC(8));
+          img_index = 0;
+        }
+      }
+      if (img_index != 0) {
+        USBSerial.write(img, img_index);
+        k_sleep(K_USEC(8));
+        img_index = 0;
+      }
+      USBSerial.write(bmpPad,
+                      (4 - (frame_width * 3) % 4) % 4); // and padding as needed
+      pfbRow += frame_width * 2;
+      if ((y & 0x3) == 0x3)
+        printk("*");
     }
-    USBSerial.write(bmpPad,
-                    (4 - (frame_width * 3) % 4) % 4); // and padding as needed
-    pfbRow += frame_width;
-    if ((y & 0x3) == 0x3)
-      printk("*");
+    printk("\n");
+
+  } else {
+    uint16_t *pfb = frameBuffer;
+    uint8_t img[3];
+    for (int y = frame_height - 1; y >= 0; y--) { // iterate image array
+      pfb = &frameBuffer[y * frame_width];
+      for (int x = 0; x < frame_width; x++) {
+        // r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
+        uint16_t pixel = HTONS(*pfb++);
+        img[2] = (pixel >> 8) & 0xf8; // r
+        img[1] = (pixel >> 3) & 0xfc; // g
+        img[0] = (pixel << 3);        // b
+        USBSerial.write(img, 3);
+        k_sleep(K_USEC(8));
+      }
+      USBSerial.write(bmpPad,
+                      (4 - (frame_width * 3) % 4) % 4); // and padding as needed
+    }
   }
-  printk("\n");
-#else
-  uint16_t *pfb = frameBuffer;
-  uint8_t img[3];
-  for (int y = frame_height - 1; y >= 0; y--) { // iterate image array
-    pfb = &frameBuffer[y * frame_width];
-    for (int x = 0; x < frame_width; x++) {
-      // r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3
-      uint16_t pixel = HTONS(*pfb++);
-      img[2] = (pixel >> 8) & 0xf8; // r
-      img[1] = (pixel >> 3) & 0xfc; // g
-      img[0] = (pixel << 3);        // b
-      USBSerial.write(img, 3);
-      k_sleep(K_USEC(8));
-    }
-    USBSerial.write(bmpPad,
-                    (4 - (frame_width * 3) % 4) % 4); // and padding as needed
-  }
-#endif
 
   USBSerial.write(0xBB);
   USBSerial.write(0xCC);

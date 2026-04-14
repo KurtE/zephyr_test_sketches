@@ -19,10 +19,10 @@
 // Try using fixed normal memory buffer for display
 //#define ILI9341_USE_FIXED_BUFFER
 // Hack try to use fixed buffer for camera
-#define CAMERA_USE_FIXED_BUFFER
+//#define CAMERA_USE_FIXED_BUFFER
 //#define TRY_CAPTURE_SNAPSHOT
 //#define TRY_WRITERECTCB
-//#define USE_ST7796
+#define USE_ST7796
 //#define GRAY_IMAGE
 #define GRAY_IMAGE_FUDGE_SIZE (660*250)
 #include <stdio.h>
@@ -436,6 +436,7 @@ void initialize_display() {
 #ifdef USE_ST7796
   tft.begin();
   tft.setRotation(1);
+  tft.invertDisplay(true);
 #else
 	tft.begin();
 	tft.setRotation(1);
@@ -558,10 +559,12 @@ int initialize_video() {
 		(char)(fmt.pixelformat >> 16), (char)(fmt.pixelformat >> 24), fmt.width, fmt.height,
 		fmt.pitch);
 
+#if 0
 	if (caps.min_line_count != LINE_COUNT_HEIGHT) {
 		printk("ERROR: Partial framebuffers not supported by this sample\n") ;
 		return 0;
 	}
+#endif	
 	/* Size to allocate for each buffer */
 	/* lets ask for the actual current format */
 	if ((ret = video_get_format(video_dev, &fmt)) != 0) {

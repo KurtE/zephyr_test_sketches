@@ -146,12 +146,13 @@
 
 &dcmi {
 	status = "okay";
+	//zephyr,deferred-init;
 	/* ext-sdram = <&sdram1>; */
 	pinctrl-0 = <&dcmi_hsync_pa4 &dcmi_pixclk_pa6 &dcmi_vsync_pi5
 		     &dcmi_d0_ph9 &dcmi_d1_ph10 &dcmi_d2_ph11 &dcmi_d3_ph12
 		     &dcmi_d4_ph14 &dcmi_d5_pi4 &dcmi_d6_pi6 &dcmi_d7_pi7>;
 	pinctrl-names = "default";
-	dmas = <&dma1 0 75 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PERIPH_NO_INC |
+	dmas = <&dma1 1 75 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PERIPH_NO_INC |
 			    STM32_DMA_MEM_INC | STM32_DMA_PERIPH_32BITS | STM32_DMA_MEM_32BITS |
 			    STM32_DMA_PRIORITY_HIGH) STM32_DMA_FIFO_FULL>; //FULL for 7670, default FIFO_1_4
 
@@ -162,7 +163,7 @@
 			bus-width = <8>;
 			hsync-active = <0>;
 			vsync-active = <0>;
-			pclk-sample = <1>;
+			pclk-sample = <0>;
 		};
 	};
 };
@@ -171,6 +172,10 @@
 / {
 	chosen {
 		zephyr,camera = &dcmi;
+		zephyr,camera-sensor = &gc2145;
+		//zephyr,console = &usart1;
+		//zephyr,shell-uart = &usart1;
+		//zephyr,cdc-acm-uart0 = &usart1;
 		zephyr,console = &usart6;
 		zephyr,shell-uart = &usart6;
 		zephyr,cdc-acm-uart0 = &usart6;
@@ -267,23 +272,6 @@
 				    <&gpioe 14 0>,
 				    <&gpioe 15 0>,
 
-					<&gpioe 0 0>,
-				    <&gpioe 1 0>,
-				    <&gpioe 2 0>,
-				    <&gpioe 3 0>,
-				    <&gpioe 4 0>,
-				    <&gpioe 5 0>,
-				    <&gpioe 6 0>,
-				    <&gpioe 7 0>,
-				    <&gpioe 8 0>,
-				    <&gpioe 9 0>,
-				    <&gpioe 10 0>,
-				    <&gpioe 11 0>,
-				    <&gpioe 12 0>,
-				    <&gpioe 13 0>,
-				    <&gpioe 14 0>,
-				    <&gpioe 15 0>,
-
 					<&gpiof 0 0>,
 				    <&gpiof 1 0>,
 				    <&gpiof 2 0>,
@@ -300,23 +288,6 @@
 				    <&gpiof 13 0>,
 				    <&gpiof 14 0>,
 				    <&gpiof 15 0>,
-
-					<&gpiog 0 0>,
-				    <&gpiog 1 0>,
-				    <&gpiog 2 0>,
-				    <&gpiog 3 0>,
-				    <&gpiog 4 0>,
-				    <&gpiog 5 0>,
-				    <&gpiog 6 0>,
-				    <&gpiog 7 0>,
-				    <&gpiog 8 0>,
-				    <&gpiog 9 0>,
-				    <&gpiog 10 0>,
-				    <&gpiog 11 0>,
-				    <&gpiog 12 0>,
-				    <&gpiog 13 0>,
-				    <&gpiog 14 0>,
-				    <&gpiog 15 0>,
 
 					<&gpiog 0 0>,
 				    <&gpiog 1 0>,
