@@ -6,7 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 //#define RAW_TEST_MODE
-//#define TRY_SNAPSHOT
+#define DEFER_INIT_CAMERA
+#define TRY_SNAPSHOT
 
 #include <stdio.h>
 #include <string.h>
@@ -201,6 +202,8 @@ int initialize_video(uint8_t camera_index) {
   int ret = 0;
 
 #ifdef DEFER_INIT_CAMERA
+  extern int camera_ext_clock_enable(void);
+
   camera_ext_clock_enable();
 #endif
 

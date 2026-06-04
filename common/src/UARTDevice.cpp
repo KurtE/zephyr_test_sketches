@@ -210,9 +210,7 @@ void UARTDevice::_process_interrupt() {
 	int length;
 	int ret = 0;
 
-	if (!uart_irq_update(_uart)) {
-		return;
-	}
+	uart_irq_update(_uart);
 
 	while (uart_irq_rx_ready(_uart) && ((length = uart_fifo_read(_uart, buf, sizeof(buf))) > 0)) {
 		if (length > (int)sizeof(buf)) length = (int)sizeof(buf);
